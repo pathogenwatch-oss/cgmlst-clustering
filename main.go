@@ -5,17 +5,13 @@ import (
 	"io"
 	"math/bits"
 	"os"
+	"sync"
 
 	"github.com/golang-collections/go-datastructures/bitarray"
 	"github.com/pkg/bson"
 )
 
 type BitArray bitarray.BitArray
-
-type CrapHashKey struct {
-	Gene   string
-	Allele interface{}
-}
 
 type Profile struct {
 	ID         string
@@ -45,33 +41,49 @@ func count(ba BitArray) int {
 	return count
 }
 
-var crapHashTable = make(map[interface{}]uint64)
-var maxCrapHash uint64
-
-func crapHash(input interface{}) uint64 {
-	if hash, ok := crapHashTable[input]; ok {
-		return hash
-	}
-	crapHashTable[input] = maxCrapHash
-	maxCrapHash = maxCrapHash + 1
-	return maxCrapHash - 1
+type AlleleKey struct {
+	Gene   string
+	Allele interface{}
 }
 
-var indexCache = make(map[string]Index)
+type Tokeniser struct {
+	lookup   map[AlleleKey]uint64
+	maxValue uint64
+	mux      sync.Mutex
+}
 
-func index(profile Profile) Index {
-	if index, ok := indexCache[profile.FileID]; ok {
+func (t *Tokeniser) Get(key AlleleKey) uint64 {
+	t.mux.Lock()
+	defer t.mux.Unlock()
+	if hash, ok := t.lookup[key]; ok {
+		return hash
+	}
+	t.lookup[key] = t.maxValue
+	t.maxValue = t.maxValue + 1
+	return t.maxValue - 1
+}
+
+type Indexer struct {
+	tokens *Tokeniser
+	lookup map[string]Index
+	mux    sync.Mutex
+}
+
+func (i *Indexer) Index(profile Profile) Index {
+	i.mux.Lock()
+	defer i.mux.Unlock()
+	if index, ok := i.lookup[profile.FileID]; ok {
 		return index
 	}
 	genesBa := bitarray.NewSparseBitArray()
 	allelesBa := bitarray.NewSparseBitArray()
 	for gene, allele := range profile.Matches {
-		alleleHash := crapHash(CrapHashKey{
+		alleleHash := i.tokens.Get(AlleleKey{
 			Gene:   gene,
 			Allele: allele,
 		})
 		allelesBa.SetBit(alleleHash)
-		geneHash := crapHash(CrapHashKey{
+		geneHash := i.tokens.Get(AlleleKey{
 			Gene:   gene,
 			Allele: nil,
 		})
@@ -81,11 +93,20 @@ func index(profile Profile) Index {
 		Genes:   genesBa,
 		Alleles: allelesBa,
 	}
-	indexCache[profile.FileID] = index
+	i.lookup[profile.FileID] = index
 	return index
 }
 
-func compare(indexA Index, indexB Index) int {
+type Comparer struct {
+	lookup map[string]Index
+}
+
+func (c *Comparer) compare(fileIDA string, fileIDB string) int {
+	indexA, okA := c.lookup[fileIDA]
+	indexB, okB := c.lookup[fileIDB]
+	if !okA || !okB {
+		panic("Missing index")
+	}
 	geneCount := count(indexA.Genes.And(indexB.Genes))
 	alleleCount := count(indexA.Alleles.And(indexB.Alleles))
 	return geneCount - alleleCount
@@ -103,11 +124,67 @@ func parseProfile(doc map[string]interface{}) Profile {
 	}
 }
 
+type Job struct {
+	FileIDA    string
+	FileIDB    string
+	ScoreIndex int
+}
+
+type Score struct {
+	Value int
+	Index int
+}
+
+func score(jobs chan Job, output chan Score, comparer Comparer, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for {
+		j, more := <-jobs
+		if !more {
+			return
+		}
+		score := comparer.compare(j.FileIDA, j.FileIDB)
+		if j.ScoreIndex%100 == 0 {
+			fmt.Println(j.ScoreIndex)
+		}
+		output <- Score{
+			Value: score,
+			Index: j.ScoreIndex,
+		}
+	}
+}
+
+func run(profiles chan Profile, indexer *Indexer, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for {
+		p, more := <-profiles
+		if !more {
+			return
+		}
+		indexer.Index(p)
+	}
+}
+
 func main() {
+	numWorkers := 4
 	dec := bson.NewDecoder(os.Stdin)
-	profiles := make([]Profile, 0)
+	// profiles := make([]Profile, 0)
 	fileIds := make(map[string]bool)
-	scores := make([]int, 0)
+
+	profiles := make(chan Profile)
+	tokeniser := Tokeniser{
+		lookup: make(map[AlleleKey]uint64),
+	}
+	indexer := Indexer{
+		tokens: &tokeniser,
+		lookup: make(map[string]Index),
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(numWorkers)
+
+	for i := 1; i <= numWorkers; i++ {
+		go run(profiles, &indexer, &wg)
+	}
 
 	for {
 		d := make(map[string]interface{})
@@ -116,22 +193,59 @@ func main() {
 			if err != io.EOF {
 				panic(err)
 			}
-			fmt.Println(len(scores))
-			fmt.Println(len(indexCache))
-			return
+			close(profiles)
+			break
 		}
 
 		p := parseProfile(d)
-		i := index(p)
-		for _, otherP := range profiles {
-			i2 := index(otherP)
-			scores = append(scores, compare(i, i2))
+		if _, ok := fileIds[p.FileID]; !ok {
+			profiles <- p
 		}
 
-		profiles = append(profiles, p)
 		fileIds[p.FileID] = true
 		if len(fileIds)%100 == 0 {
 			fmt.Println(len(fileIds))
 		}
 	}
+	wg.Wait()
+
+	jobs := make(chan Job)
+	scores := make(chan Score)
+	matrix := make([]int, (len(fileIds)*(len(fileIds)-1))/2)
+	scoresRemaining := len(matrix)
+
+	wg.Add(numWorkers + 1)
+	for i := 1; i <= numWorkers; i++ {
+		go score(jobs, scores, Comparer{lookup: indexer.lookup}, &wg)
+	}
+
+	go func() {
+		defer wg.Done()
+		for scoresRemaining > 0 {
+			s := <-scores
+			matrix[s.Index] = s.Value
+			scoresRemaining--
+		}
+		close(scores)
+	}()
+
+	fileIDList := make([]string, len(fileIds))
+	i := 0
+	for fileID := range fileIds {
+		fileIDList[i] = fileID
+		i++
+	}
+	scoreIndex := 0
+	for i, fileIDA := range fileIDList[:len(fileIDList)-1] {
+		for _, fileIDB := range fileIDList[i+1:] {
+			jobs <- Job{
+				FileIDA:    fileIDA,
+				FileIDB:    fileIDB,
+				ScoreIndex: scoreIndex,
+			}
+			scoreIndex++
+		}
+	}
+	close(jobs)
+	wg.Wait()
 }
