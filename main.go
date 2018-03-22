@@ -28,15 +28,10 @@ type Index struct {
 }
 
 func count(ba BitArray) int {
-	iter := ba.Blocks()
 	count := 0
-	for {
-		if ok := iter.Next(); ok {
-			_, block := iter.Value()
-			count = count + bits.OnesCount64(uint64(block))
-		} else {
-			break
-		}
+	for iter := ba.Blocks(); iter.Next(); {
+		_, block := iter.Value()
+		count = count + bits.OnesCount64(uint64(block))
 	}
 	return count
 }
@@ -75,6 +70,9 @@ func (i *Indexer) Index(profile Profile) Index {
 	if index, ok := i.lookup[profile.FileID]; ok {
 		return index
 	}
+	// fmt.Println(i.tokens.maxValue)
+	maxGenes := uint64(2208)
+	arrayLen := i.tokens.maxValue + maxGenes*2
 	genesBa := bitarray.NewSparseBitArray()
 	allelesBa := bitarray.NewSparseBitArray()
 	for gene, allele := range profile.Matches {
@@ -82,12 +80,16 @@ func (i *Indexer) Index(profile Profile) Index {
 			Gene:   gene,
 			Allele: allele,
 		})
-		allelesBa.SetBit(alleleHash)
+		if err := allelesBa.SetBit(alleleHash); err != nil {
+			panic(fmt.Sprintf("alleleHash: %d, capacity: %d, array len: %d", alleleHash, allelesBa.Capacity(), arrayLen))
+		}
 		geneHash := i.tokens.Get(AlleleKey{
 			Gene:   gene,
 			Allele: nil,
 		})
-		genesBa.SetBit(geneHash)
+		if err := genesBa.SetBit(geneHash); err != nil {
+			panic(fmt.Sprintf("geneHash: %d, capacity: %d, array len: %d", geneHash, genesBa.Capacity(), arrayLen))
+		}
 	}
 	index := Index{
 		Genes:   genesBa,
@@ -143,7 +145,7 @@ func score(jobs chan Job, output chan Score, comparer Comparer, wg *sync.WaitGro
 			return
 		}
 		score := comparer.compare(j.FileIDA, j.FileIDB)
-		if j.ScoreIndex%100 == 0 {
+		if j.ScoreIndex%100000 == 0 {
 			fmt.Println(j.ScoreIndex)
 		}
 		output <- Score{
@@ -167,7 +169,6 @@ func run(profiles chan Profile, indexer *Indexer, wg *sync.WaitGroup) {
 func main() {
 	numWorkers := 4
 	dec := bson.NewDecoder(os.Stdin)
-	// profiles := make([]Profile, 0)
 	fileIds := make(map[string]bool)
 
 	profiles := make(chan Profile)
@@ -206,6 +207,11 @@ func main() {
 		if len(fileIds)%100 == 0 {
 			fmt.Println(len(fileIds))
 		}
+
+		// if len(fileIds) >= 5 {
+		// 	close(profiles)
+		// 	break
+		// }
 	}
 	wg.Wait()
 
@@ -248,4 +254,10 @@ func main() {
 	}
 	close(jobs)
 	wg.Wait()
+
+	// fmt.Println(matrix)
+	// fmt.Println(fileIDList)
+	// for i := 0; i < 5; i++ {
+	// }
+	// fmt.Println(matrix[0], fileIDList[0], fileIDList[1])
 }
