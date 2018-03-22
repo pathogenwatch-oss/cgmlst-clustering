@@ -1,8 +1,9 @@
 package main
 
 import (
-	"fmt"
+	"bytes"
 	"io"
+	"log"
 	"math/bits"
 	"os"
 	"sync"
@@ -28,10 +29,15 @@ type Index struct {
 }
 
 func count(ba BitArray) int {
+	iter := ba.Blocks()
 	count := 0
-	for iter := ba.Blocks(); iter.Next(); {
-		_, block := iter.Value()
-		count = count + bits.OnesCount64(uint64(block))
+	for {
+		if ok := iter.Next(); ok {
+			_, block := iter.Value()
+			count = count + bits.OnesCount64(uint64(block))
+		} else {
+			break
+		}
 	}
 	return count
 }
@@ -70,9 +76,6 @@ func (i *Indexer) Index(profile Profile) Index {
 	if index, ok := i.lookup[profile.FileID]; ok {
 		return index
 	}
-	// fmt.Println(i.tokens.maxValue)
-	maxGenes := uint64(2208)
-	arrayLen := i.tokens.maxValue + maxGenes*2
 	genesBa := bitarray.NewSparseBitArray()
 	allelesBa := bitarray.NewSparseBitArray()
 	for gene, allele := range profile.Matches {
@@ -81,14 +84,14 @@ func (i *Indexer) Index(profile Profile) Index {
 			Allele: allele,
 		})
 		if err := allelesBa.SetBit(alleleHash); err != nil {
-			panic(fmt.Sprintf("alleleHash: %d, capacity: %d, array len: %d", alleleHash, allelesBa.Capacity(), arrayLen))
+			panic(err)
 		}
 		geneHash := i.tokens.Get(AlleleKey{
 			Gene:   gene,
 			Allele: nil,
 		})
 		if err := genesBa.SetBit(geneHash); err != nil {
-			panic(fmt.Sprintf("geneHash: %d, capacity: %d, array len: %d", geneHash, genesBa.Capacity(), arrayLen))
+			panic(err)
 		}
 	}
 	index := Index{
@@ -137,7 +140,7 @@ type Score struct {
 	Index int
 }
 
-func score(jobs chan Job, output chan Score, comparer Comparer, wg *sync.WaitGroup) {
+func scoreProfiles(jobs chan Job, output chan Score, comparer Comparer, wg *sync.WaitGroup) {
 	defer wg.Done()
 	for {
 		j, more := <-jobs
@@ -146,7 +149,7 @@ func score(jobs chan Job, output chan Score, comparer Comparer, wg *sync.WaitGro
 		}
 		score := comparer.compare(j.FileIDA, j.FileIDB)
 		if j.ScoreIndex%100000 == 0 {
-			fmt.Println(j.ScoreIndex)
+			log.Println(j.ScoreIndex)
 		}
 		output <- Score{
 			Value: score,
@@ -155,7 +158,7 @@ func score(jobs chan Job, output chan Score, comparer Comparer, wg *sync.WaitGro
 	}
 }
 
-func run(profiles chan Profile, indexer *Indexer, wg *sync.WaitGroup) {
+func indexProfiles(profiles chan Profile, indexer *Indexer, wg *sync.WaitGroup) {
 	defer wg.Done()
 	for {
 		p, more := <-profiles
@@ -166,9 +169,14 @@ func run(profiles chan Profile, indexer *Indexer, wg *sync.WaitGroup) {
 	}
 }
 
-func main() {
+type scoresResult struct {
+	FileIDs []string
+	Scores  []int
+}
+
+func scoreAll(r io.Reader) scoresResult {
 	numWorkers := 4
-	dec := bson.NewDecoder(os.Stdin)
+	dec := bson.NewDecoder(r)
 	fileIds := make(map[string]bool)
 
 	profiles := make(chan Profile)
@@ -184,7 +192,7 @@ func main() {
 	wg.Add(numWorkers)
 
 	for i := 1; i <= numWorkers; i++ {
-		go run(profiles, &indexer, &wg)
+		go indexProfiles(profiles, &indexer, &wg)
 	}
 
 	for {
@@ -205,13 +213,8 @@ func main() {
 
 		fileIds[p.FileID] = true
 		if len(fileIds)%100 == 0 {
-			fmt.Println(len(fileIds))
+			log.Println(len(fileIds))
 		}
-
-		// if len(fileIds) >= 5 {
-		// 	close(profiles)
-		// 	break
-		// }
 	}
 	wg.Wait()
 
@@ -222,7 +225,7 @@ func main() {
 
 	wg.Add(numWorkers + 1)
 	for i := 1; i <= numWorkers; i++ {
-		go score(jobs, scores, Comparer{lookup: indexer.lookup}, &wg)
+		go scoreProfiles(jobs, scores, Comparer{lookup: indexer.lookup}, &wg)
 	}
 
 	go func() {
@@ -254,10 +257,36 @@ func main() {
 	}
 	close(jobs)
 	wg.Wait()
+	return scoresResult{
+		fileIDList,
+		matrix,
+	}
+}
 
-	// fmt.Println(matrix)
-	// fmt.Println(fileIDList)
-	// for i := 0; i < 5; i++ {
-	// }
-	// fmt.Println(matrix[0], fileIDList[0], fileIDList[1])
+func loadFile(p string) (io.Reader, error) {
+	file, err := os.Open(p)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	fileinfo, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+
+	filesize := fileinfo.Size()
+	buffer := make([]byte, filesize)
+
+	_, err = file.Read(buffer)
+	if err != nil {
+		return nil, err
+	}
+
+	return bytes.NewReader(buffer), nil
+}
+
+func main() {
+	scores := scoreAll(os.Stdin)
+	log.Printf("fileIDs: %d; Scores: %d\n", len(scores.FileIDs), len(scores.Scores))
 }
