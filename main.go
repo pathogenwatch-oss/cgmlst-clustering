@@ -281,29 +281,6 @@ func scoreAll(r io.Reader) scoresResult {
 	}
 }
 
-func loadFile(p string) (io.Reader, error) {
-	file, err := os.Open(p)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	fileinfo, err := file.Stat()
-	if err != nil {
-		return nil, err
-	}
-
-	filesize := fileinfo.Size()
-	buffer := make([]byte, filesize)
-
-	_, err = file.Read(buffer)
-	if err != nil {
-		return nil, err
-	}
-
-	return bytes.NewReader(buffer), nil
-}
-
 func main() {
 	scores := scoreAll(os.Stdin)
 	log.Printf("fileIDs: %d; Scores: %d\n", len(scores.FileIDs), len(scores.Scores))

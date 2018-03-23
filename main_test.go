@@ -1,11 +1,13 @@
 package main
 
 import (
+	"os"
+	"sync"
 	"testing"
 )
 
 func BenchmarkScoreAll(b *testing.B) {
-	profiles, err := loadFile("../private_staph.2.bson")
+	profiles, err := os.Open("../all_staph.bson")
 	if err != nil {
 		b.Fatal("Couldn't open test file")
 	}
