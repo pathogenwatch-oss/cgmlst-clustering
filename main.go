@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"io"
 	"log"
 	"math/bits"
@@ -48,47 +47,71 @@ type AlleleKey struct {
 }
 
 type Tokeniser struct {
-	lookup   map[AlleleKey]uint64
-	maxValue uint64
-	mux      sync.Mutex
+	sync.Mutex
+	lookup    map[AlleleKey]uint64
+	nextValue chan uint64
+}
+
+func NewTokeniser() *Tokeniser {
+	t := Tokeniser{
+		nextValue: make(chan uint64),
+		lookup:    make(map[AlleleKey]uint64),
+	}
+	go func() {
+		var i uint64
+		for i = 0; ; i++ {
+			t.nextValue <- i
+		}
+	}()
+	return &t
 }
 
 func (t *Tokeniser) Get(key AlleleKey) uint64 {
-	t.mux.Lock()
-	defer t.mux.Unlock()
-	if hash, ok := t.lookup[key]; ok {
-		return hash
+	t.Lock()
+	defer t.Unlock()
+	if value, ok := t.lookup[key]; ok {
+		return value
 	}
-	t.lookup[key] = t.maxValue
-	t.maxValue = t.maxValue + 1
-	return t.maxValue - 1
+	value := <-t.nextValue
+	t.lookup[key] = value
+	return value
 }
 
 type Indexer struct {
-	tokens *Tokeniser
-	lookup map[string]Index
-	mux    sync.Mutex
+	sync.Mutex
+	geneTokens   *Tokeniser
+	alleleTokens *Tokeniser
+	lookup       map[string]Index
+}
+
+func NewIndexer() *Indexer {
+	i := Indexer{
+		geneTokens:   NewTokeniser(),
+		alleleTokens: NewTokeniser(),
+		lookup:       make(map[string]Index),
+	}
+	return &i
 }
 
 func (i *Indexer) Index(profile Profile) Index {
-	i.mux.Lock()
-	defer i.mux.Unlock()
+	defer i.Unlock()
+	i.Lock()
 	if index, ok := i.lookup[profile.FileID]; ok {
 		return index
 	}
 	genesBa := bitarray.NewSparseBitArray()
 	allelesBa := bitarray.NewSparseBitArray()
 	for gene, allele := range profile.Matches {
-		alleleHash := i.tokens.Get(AlleleKey{
-			Gene:   gene,
-			Allele: allele,
+		alleleHash := i.alleleTokens.Get(AlleleKey{
+			gene,
+			allele,
 		})
 		if err := allelesBa.SetBit(alleleHash); err != nil {
 			panic(err)
 		}
-		geneHash := i.tokens.Get(AlleleKey{
-			Gene:   gene,
-			Allele: nil,
+		geneHash := i.geneTokens.Get(AlleleKey{
+			gene,
+			nil,
 		})
 		if err := genesBa.SetBit(geneHash); err != nil {
 			panic(err)
@@ -180,19 +203,13 @@ func scoreAll(r io.Reader) scoresResult {
 	fileIds := make(map[string]bool)
 
 	profiles := make(chan Profile)
-	tokeniser := Tokeniser{
-		lookup: make(map[AlleleKey]uint64),
-	}
-	indexer := Indexer{
-		tokens: &tokeniser,
-		lookup: make(map[string]Index),
-	}
+	indexer := NewIndexer()
 
 	var wg sync.WaitGroup
-	wg.Add(numWorkers)
 
 	for i := 1; i <= numWorkers; i++ {
-		go indexProfiles(profiles, &indexer, &wg)
+		wg.Add(1)
+		go indexProfiles(profiles, indexer, &wg)
 	}
 
 	for {
@@ -223,11 +240,12 @@ func scoreAll(r io.Reader) scoresResult {
 	matrix := make([]int, (len(fileIds)*(len(fileIds)-1))/2)
 	scoresRemaining := len(matrix)
 
-	wg.Add(numWorkers + 1)
 	for i := 1; i <= numWorkers; i++ {
+		wg.Add(1)
 		go scoreProfiles(jobs, scores, Comparer{lookup: indexer.lookup}, &wg)
 	}
 
+	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		for scoresRemaining > 0 {
