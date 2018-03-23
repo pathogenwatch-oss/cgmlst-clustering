@@ -3,15 +3,11 @@ package main
 import (
 	"io"
 	"log"
-	"math/bits"
 	"os"
 	"sync"
 
-	"github.com/golang-collections/go-datastructures/bitarray"
 	"github.com/pkg/bson"
 )
-
-type BitArray bitarray.BitArray
 
 type Profile struct {
 	ID         string
@@ -23,22 +19,8 @@ type Profile struct {
 }
 
 type Index struct {
-	Genes   BitArray
-	Alleles BitArray
-}
-
-func count(ba BitArray) int {
-	iter := ba.Blocks()
-	count := 0
-	for {
-		if ok := iter.Next(); ok {
-			_, block := iter.Value()
-			count = count + bits.OnesCount64(uint64(block))
-		} else {
-			break
-		}
-	}
-	return count
+	Genes   *BitArray
+	Alleles *BitArray
 }
 
 type AlleleKey struct {
@@ -50,6 +32,7 @@ type Tokeniser struct {
 	sync.Mutex
 	lookup    map[AlleleKey]uint64
 	nextValue chan uint64
+	lastValue uint64
 }
 
 func NewTokeniser() *Tokeniser {
@@ -74,6 +57,7 @@ func (t *Tokeniser) Get(key AlleleKey) uint64 {
 	}
 	value := <-t.nextValue
 	t.lookup[key] = value
+	t.lastValue = value
 	return value
 }
 
@@ -99,23 +83,24 @@ func (i *Indexer) Index(profile Profile) Index {
 	if index, ok := i.lookup[profile.FileID]; ok {
 		return index
 	}
-	genesBa := bitarray.NewSparseBitArray()
-	allelesBa := bitarray.NewSparseBitArray()
+	genesBa := NewBitArray(2500)
+	var allelesBa *BitArray
+	if i.alleleTokens.lastValue < 2500 {
+		allelesBa = NewBitArray(2500)
+	} else {
+		allelesBa = NewBitArray(i.alleleTokens.lastValue)
+	}
 	for gene, allele := range profile.Matches {
 		alleleHash := i.alleleTokens.Get(AlleleKey{
 			gene,
 			allele,
 		})
-		if err := allelesBa.SetBit(alleleHash); err != nil {
-			panic(err)
-		}
+		allelesBa.SetBit(alleleHash)
 		geneHash := i.geneTokens.Get(AlleleKey{
 			gene,
 			nil,
 		})
-		if err := genesBa.SetBit(geneHash); err != nil {
-			panic(err)
-		}
+		genesBa.SetBit(geneHash)
 	}
 	index := Index{
 		Genes:   genesBa,
@@ -135,8 +120,8 @@ func (c *Comparer) compare(fileIDA string, fileIDB string) int {
 	if !okA || !okB {
 		panic("Missing index")
 	}
-	geneCount := count(indexA.Genes.And(indexB.Genes))
-	alleleCount := count(indexA.Alleles.And(indexB.Alleles))
+	geneCount := CompareBits(indexA.Genes, indexB.Genes)
+	alleleCount := CompareBits(indexA.Alleles, indexB.Alleles)
 	return geneCount - alleleCount
 }
 
