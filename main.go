@@ -139,31 +139,19 @@ func parseProfile(doc map[string]interface{}) Profile {
 }
 
 type Job struct {
-	FileIDA    string
-	FileIDB    string
-	ScoreIndex int
+	FileIDA string
+	FileIDB string
+	Score   *int
 }
 
-type Score struct {
-	Value int
-	Index int
-}
-
-func scoreProfiles(jobs chan Job, output chan Score, comparer Comparer, wg *sync.WaitGroup) {
+func scoreProfiles(jobs chan Job, comparer Comparer, wg *sync.WaitGroup) {
 	defer wg.Done()
 	for {
 		j, more := <-jobs
 		if !more {
 			return
 		}
-		score := comparer.compare(j.FileIDA, j.FileIDB)
-		if j.ScoreIndex%100000 == 0 {
-			log.Println(j.ScoreIndex)
-		}
-		output <- Score{
-			Value: score,
-			Index: j.ScoreIndex,
-		}
+		*j.Score = comparer.compare(j.FileIDA, j.FileIDB)
 	}
 }
 
@@ -267,33 +255,20 @@ func scoreAll(r io.Reader) scoresResult {
 	wg.Wait()
 
 	jobs := make(chan Job)
-	scores := make(chan Score)
 	matrix := make([]int, (len(fileIDs)*(len(fileIDs)-1))/2)
-	scoresRemaining := len(matrix)
 
 	for i := 1; i <= numWorkers; i++ {
 		wg.Add(1)
-		go scoreProfiles(jobs, scores, Comparer{lookup: indexer.lookup}, &wg)
+		go scoreProfiles(jobs, Comparer{lookup: indexer.lookup}, &wg)
 	}
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for scoresRemaining > 0 {
-			s := <-scores
-			matrix[s.Index] = s.Value
-			scoresRemaining--
-		}
-		close(scores)
-	}()
 
 	scoreIndex := 0
 	for i, fileIDA := range fileIDs[:len(fileIDs)-1] {
 		for _, fileIDB := range fileIDs[i+1:] {
 			jobs <- Job{
-				FileIDA:    fileIDA,
-				FileIDB:    fileIDB,
-				ScoreIndex: scoreIndex,
+				FileIDA: fileIDA,
+				FileIDB: fileIDB,
+				Score:   &matrix[scoreIndex],
 			}
 			scoreIndex++
 		}
