@@ -185,7 +185,7 @@ type scoresResult struct {
 type dataBlob map[string]interface{}
 
 func parseProfiles(r *io.Reader, profiles chan Profile, fileIDs chan string) {
-	numWorkers := 4
+	numWorkers := 1000
 	dec := bson.NewDecoder(*r)
 	var wg sync.WaitGroup
 
@@ -236,7 +236,7 @@ func parseProfiles(r *io.Reader, profiles chan Profile, fileIDs chan string) {
 }
 
 func scoreAll(r io.Reader) scoresResult {
-	numWorkers := 4
+	numWorkers := 1000
 
 	profiles := make(chan Profile)
 	fileIDsChan := make(chan string)
