@@ -182,47 +182,92 @@ type scoresResult struct {
 	Scores  []int
 }
 
+type dataBlob map[string]interface{}
+
+func parseProfiles(r *io.Reader, profiles chan Profile, fileIDs chan string) {
+	numWorkers := 4
+	dec := bson.NewDecoder(*r)
+	var wg sync.WaitGroup
+
+	fileIDsSet := make(map[string]bool)
+	var fileIDsLock sync.Mutex
+
+	dataBlobs := make(chan dataBlob)
+	go func() {
+		for {
+			d := make(dataBlob)
+			if err := dec.Decode(&d); err == nil {
+				dataBlobs <- d
+			} else if err == io.EOF {
+				close(dataBlobs)
+				return
+			} else {
+				panic(err)
+			}
+		}
+	}()
+
+	for w := 0; w < numWorkers; w++ {
+		wg.Add(1)
+		go func() {
+			for {
+				if d, more := <-dataBlobs; more {
+					p := parseProfile(d)
+					fileIDsLock.Lock()
+					if _, ok := fileIDsSet[p.FileID]; !ok {
+						profiles <- p
+						fileIDs <- p.FileID
+						fileIDsSet[p.FileID] = true
+					}
+					fileIDsLock.Unlock()
+				} else {
+					wg.Done()
+					return
+				}
+			}
+		}()
+	}
+
+	go func() {
+		wg.Wait()
+		close(profiles)
+		close(fileIDs)
+	}()
+}
+
 func scoreAll(r io.Reader) scoresResult {
 	numWorkers := 4
-	dec := bson.NewDecoder(r)
-	fileIds := make(map[string]bool)
 
 	profiles := make(chan Profile)
+	fileIDsChan := make(chan string)
+	fileIDs := []string{}
 	indexer := NewIndexer()
 
 	var wg sync.WaitGroup
 
+	parseProfiles(&r, profiles, fileIDsChan)
 	for i := 1; i <= numWorkers; i++ {
 		wg.Add(1)
 		go indexProfiles(profiles, indexer, &wg)
 	}
 
-	for {
-		d := make(map[string]interface{})
-
-		if err := dec.Decode(&d); err != nil {
-			if err != io.EOF {
-				panic(err)
+	wg.Add(1)
+	go func() {
+		for i := 0; ; i++ {
+			if f, more := <-fileIDsChan; more {
+				fileIDs = append(fileIDs, f)
+			} else {
+				wg.Done()
+				return
 			}
-			close(profiles)
-			break
 		}
+	}()
 
-		p := parseProfile(d)
-		if _, ok := fileIds[p.FileID]; !ok {
-			profiles <- p
-		}
-
-		fileIds[p.FileID] = true
-		if len(fileIds)%100 == 0 {
-			log.Println(len(fileIds))
-		}
-	}
 	wg.Wait()
 
 	jobs := make(chan Job)
 	scores := make(chan Score)
-	matrix := make([]int, (len(fileIds)*(len(fileIds)-1))/2)
+	matrix := make([]int, (len(fileIDs)*(len(fileIDs)-1))/2)
 	scoresRemaining := len(matrix)
 
 	for i := 1; i <= numWorkers; i++ {
@@ -241,15 +286,9 @@ func scoreAll(r io.Reader) scoresResult {
 		close(scores)
 	}()
 
-	fileIDList := make([]string, len(fileIds))
-	i := 0
-	for fileID := range fileIds {
-		fileIDList[i] = fileID
-		i++
-	}
 	scoreIndex := 0
-	for i, fileIDA := range fileIDList[:len(fileIDList)-1] {
-		for _, fileIDB := range fileIDList[i+1:] {
+	for i, fileIDA := range fileIDs[:len(fileIDs)-1] {
+		for _, fileIDB := range fileIDs[i+1:] {
 			jobs <- Job{
 				FileIDA:    fileIDA,
 				FileIDB:    fileIDB,
@@ -261,7 +300,7 @@ func scoreAll(r io.Reader) scoresResult {
 	close(jobs)
 	wg.Wait()
 	return scoresResult{
-		fileIDList,
+		fileIDs,
 		matrix,
 	}
 }
