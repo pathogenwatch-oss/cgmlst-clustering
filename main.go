@@ -90,17 +90,18 @@ func (i *Indexer) Index(profile Profile) Index {
 	} else {
 		allelesBa = NewBitArray(i.alleleTokens.lastValue)
 	}
+	var bit uint64
 	for gene, allele := range profile.Matches {
-		alleleHash := i.alleleTokens.Get(AlleleKey{
+		bit = i.alleleTokens.Get(AlleleKey{
 			gene,
 			allele,
 		})
-		allelesBa.SetBit(alleleHash)
-		geneHash := i.geneTokens.Get(AlleleKey{
+		allelesBa.SetBit(bit)
+		bit := i.geneTokens.Get(AlleleKey{
 			gene,
 			nil,
 		})
-		genesBa.SetBit(geneHash)
+		genesBa.SetBit(bit)
 	}
 	index := Index{
 		Genes:   genesBa,
