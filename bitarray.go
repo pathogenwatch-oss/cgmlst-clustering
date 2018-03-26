@@ -1,6 +1,8 @@
 package main
 
-import "math/bits"
+import (
+	"math/bits"
+)
 
 type BitArray struct {
 	blocks  []uint64
@@ -20,9 +22,12 @@ func (b *BitArray) SetBit(i uint64) {
 	block := i / 64
 	bit := i % 64
 	if block >= b.nBlocks {
-		b.blocks = append(b.blocks, block-b.nBlocks+1)
+		newBlocks := make([]uint64, block+1)
+		copy(newBlocks, b.blocks)
+		b.blocks = newBlocks
+		b.nBlocks = block + 1
 	}
-	b.blocks[block] &= i << bit
+	b.blocks[block] |= (1 << bit)
 }
 
 func CompareBits(b1 *BitArray, b2 *BitArray) int {
@@ -38,10 +43,10 @@ func CompareBits(b1 *BitArray, b2 *BitArray) int {
 	for i = 0; i < nBlocks; i++ {
 		if b1.blocks[i] == 0 {
 			continue
-		} else if b1.blocks[i] == 0 {
+		} else if b2.blocks[i] == 0 {
 			continue
 		}
-		combined := b1.blocks[i] & b1.blocks[i]
+		combined := b1.blocks[i] & b2.blocks[i]
 		if combined == 0 {
 			continue
 		}

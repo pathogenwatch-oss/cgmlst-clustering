@@ -1,59 +1,173 @@
 package main
 
 import (
-	"math/rand"
+	"io"
 	"os"
-	"sync"
 	"testing"
 )
 
-func BenchmarkBenBits(b *testing.B) {
-	rand.Seed(0)
-	bits := make([]uint64, 2000)
-	for i, _ := range bits {
-		bits[i] = rand.Uint64() % 150000
+func TestIndexer(t *testing.T) {
+	indexer := NewIndexer()
+	indexer.Index(Profile{
+		ID:         "a",
+		OrganismID: "1280",
+		FileID:     "abc123",
+		Public:     false,
+		Version:    "v1",
+		Matches: map[string]interface{}{
+			"gene1": 1,
+			"gene2": 1,
+			"gene3": 1,
+		},
+	})
+	index := indexer.lookup["abc123"]
+	if value := index.Genes.blocks[0]; value != 7 {
+		t.Fatalf("Got %d, expected 7\n", value)
 	}
-	b1 := NewBitArray(150001)
-	for _, bit := range bits {
-		b1.SetBit(bit)
+
+	indexer.Index(Profile{
+		ID:         "b",
+		OrganismID: "1280",
+		FileID:     "bcd234",
+		Public:     false,
+		Version:    "v1",
+		Matches: map[string]interface{}{
+			"gene1": 2,
+			"gene2": 2,
+			"gene4": 1,
+		},
+	})
+	index = indexer.lookup["bcd234"]
+	if value := index.Genes.blocks[0]; value != 11 {
+		t.Fatalf("Got %d, expected 11\n", value)
 	}
-	for i, _ := range bits {
-		bits[i] = rand.Uint64() % 150000
-	}
-	b.ResetTimer()
-	for run := 0; run <= b.N; run++ {
-		b2 := NewBitArray(150001)
-		for _, bit := range bits {
-			b2.SetBit(bit)
-		}
-		CompareBits(b1, b2)
+	if value := index.Alleles.blocks[0]; value != 56 {
+		t.Fatalf("Got %d, expected 56\n", value)
 	}
 }
 
-func BenchmarkConcurrentArrayUpdate(b *testing.B) {
-	array := make([]int, b.N)
-	indexes := make(chan int)
-	go func() {
-		for i := 0; i < b.N; i++ {
-			indexes <- i
-		}
-		close(indexes)
-	}()
-	var wg sync.WaitGroup
-	for worker := 0; worker < 100; worker++ {
-		wg.Add(1)
-		go func() {
-			for {
-				if i, more := <-indexes; !more {
-					wg.Done()
-					return
-				} else {
-					array[i] = i * i
-				}
-			}
-		}()
+func TestComparer(t *testing.T) {
+	profiles := [...]Profile{
+		Profile{
+			ID:         "a",
+			OrganismID: "1280",
+			FileID:     "abc123",
+			Public:     false,
+			Version:    "v1",
+			Matches: map[string]interface{}{
+				"gene1": 1,
+				"gene2": 1,
+				"gene3": 1,
+			},
+		},
+		Profile{
+			ID:         "b",
+			OrganismID: "1280",
+			FileID:     "bcd234",
+			Public:     false,
+			Version:    "v1",
+			Matches: map[string]interface{}{
+				"gene1": 2,
+				"gene2": 2,
+				"gene4": 1,
+			},
+		},
+		Profile{
+			ID:         "c",
+			OrganismID: "1280",
+			FileID:     "cde345",
+			Public:     false,
+			Version:    "v1",
+			Matches: map[string]interface{}{
+				"gene1": 1,
+				"gene2": 2,
+				"gene3": 1,
+				"gene4": 1,
+			},
+		},
 	}
-	wg.Wait()
+
+	indexer := NewIndexer()
+	for _, p := range profiles {
+		indexer.Index(p)
+	}
+	comparer := Comparer{lookup: indexer.lookup}
+	if value := comparer.compare("abc123", "bcd234"); value != 2 {
+		t.Fatalf("Expected 2, got %d\n", value)
+	}
+	if value := comparer.compare("abc123", "cde345"); value != 1 {
+		t.Fatalf("Expected 1, got %d\n", value)
+	}
+	if value := comparer.compare("bcd234", "cde345"); value != 1 {
+		t.Fatalf("Expected 1, got %d\n", value)
+	}
+}
+
+func TestScoreAll(t *testing.T) {
+	profiles := [...]Profile{
+		Profile{
+			ID:         "a",
+			OrganismID: "1280",
+			FileID:     "abc123",
+			Public:     false,
+			Version:    "v1",
+			Matches: map[string]interface{}{
+				"gene1": 1,
+				"gene2": 1,
+				"gene3": 1,
+			},
+		},
+		Profile{
+			ID:         "b",
+			OrganismID: "1280",
+			FileID:     "bcd234",
+			Public:     false,
+			Version:    "v1",
+			Matches: map[string]interface{}{
+				"gene1": 2,
+				"gene2": 2,
+				"gene4": 1,
+			},
+		},
+		Profile{
+			ID:         "c",
+			OrganismID: "1280",
+			FileID:     "cde345",
+			Public:     false,
+			Version:    "v1",
+			Matches: map[string]interface{}{
+				"gene1": 1,
+				"gene2": 2,
+				"gene3": 1,
+				"gene4": 1,
+			},
+		},
+	}
+	profilesChan := make(chan Profile)
+	fileIdsChan := make(chan string)
+	go func() {
+		for _, p := range profiles {
+			profilesChan <- p
+			fileIdsChan <- p.FileID
+		}
+		close(profilesChan)
+		close(fileIdsChan)
+	}()
+
+	result := scoreAll(profilesChan, fileIdsChan)
+	nFileIds := len(result.FileIDs)
+	if nFileIds != len(profiles) {
+		t.Fatal("Not enough fileIds")
+	}
+	if len(result.Scores) != nFileIds*(nFileIds-1)/2 {
+		t.Fatal("Not enough scores")
+	}
+	expectedScores := []int{2, 1, 1}
+	for i, score := range expectedScores {
+		if score != result.Scores[i] {
+			t.Fatalf("Score %d was %d should be %d\n", i, result.Scores[i], score)
+		}
+	}
 }
 
 func TestTokeniser(t *testing.T) {
@@ -77,11 +191,17 @@ func TestTokeniser(t *testing.T) {
 
 func BenchmarkScoreAll(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		profiles, err := os.Open("all_staph.bson")
+		profiles := make(chan Profile)
+		fileIDsChan := make(chan string)
+
+		profilesFile, err := os.Open("all_staph.bson")
 		if err != nil {
 			b.Fatal("Couldn't open test file")
 		}
-		scores := scoreAll(profiles)
+		r := (io.Reader)(profilesFile)
+		parseProfiles(&r, profiles, fileIDsChan)
+
+		scores := scoreAll(profiles, fileIDsChan)
 		nFileIds := len(scores.FileIDs)
 		nScores := len(scores.Scores)
 		if nFileIds < 2 {

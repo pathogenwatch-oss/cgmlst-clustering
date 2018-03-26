@@ -224,17 +224,12 @@ func parseProfiles(r *io.Reader, profiles chan Profile, fileIDs chan string) {
 	}()
 }
 
-func scoreAll(r io.Reader) scoresResult {
+func scoreAll(profiles chan Profile, fileIDsChan chan string) scoresResult {
 	numWorkers := 1000
-
-	profiles := make(chan Profile)
-	fileIDsChan := make(chan string)
 	fileIDs := []string{}
 	indexer := NewIndexer()
-
 	var wg sync.WaitGroup
 
-	parseProfiles(&r, profiles, fileIDsChan)
 	for i := 1; i <= numWorkers; i++ {
 		wg.Add(1)
 		go indexProfiles(profiles, indexer, &wg)
@@ -282,6 +277,12 @@ func scoreAll(r io.Reader) scoresResult {
 }
 
 func main() {
-	scores := scoreAll(os.Stdin)
+	profiles := make(chan Profile)
+	fileIDsChan := make(chan string)
+
+	r := (io.Reader)(os.Stdin)
+	parseProfiles(&r, profiles, fileIDsChan)
+
+	scores := scoreAll(profiles, fileIDsChan)
 	log.Printf("fileIDs: %d; Scores: %d\n", len(scores.FileIDs), len(scores.Scores))
 }
