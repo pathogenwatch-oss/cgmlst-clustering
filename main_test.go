@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"testing"
@@ -88,9 +89,23 @@ func TestComparer(t *testing.T) {
 	}
 
 	indexer := NewIndexer()
-	for _, p := range profiles {
+	for i, p := range profiles {
 		indexer.Index(p)
+		for j := 0; j < 10000; j++ {
+			indexer.alleleTokens.Get(AlleleKey{
+				fmt.Sprintf("fake-%d", i),
+				j,
+			})
+		}
 	}
+
+	if nBlocks := len(indexer.lookup["bcd234"].Alleles.blocks); nBlocks != 157 {
+		t.Fatalf("Expected 157 blocks, got %d\n", nBlocks)
+	}
+	if nBlocks := len(indexer.lookup["cde345"].Alleles.blocks); nBlocks != 313 {
+		t.Fatalf("Expected 313 blocks, got %d\n", nBlocks)
+	}
+
 	comparer := Comparer{lookup: indexer.lookup}
 	if value := comparer.compare("abc123", "bcd234"); value != 2 {
 		t.Fatalf("Expected 2, got %d\n", value)
