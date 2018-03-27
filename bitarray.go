@@ -31,26 +31,26 @@ func (b *BitArray) SetBit(i uint64) {
 }
 
 func CompareBits(b1 *BitArray, b2 *BitArray) int {
-	var nBlocks uint64
+	var smaller, bigger []uint64
 	if b1.nBlocks < b2.nBlocks {
-		nBlocks = b1.nBlocks
+		smaller = b1.blocks
+		bigger = b2.blocks[:b1.nBlocks]
 	} else {
-		nBlocks = b2.nBlocks
+		smaller = b2.blocks
+		bigger = b1.blocks[:b2.nBlocks]
 	}
 
 	count := 0
-	var i uint64
-	for i = 0; i < nBlocks; i++ {
-		if b1.blocks[i] == 0 {
+	for i, block := range smaller {
+		if block == 0 {
 			continue
-		} else if b2.blocks[i] == 0 {
-			continue
-		}
-		combined := b1.blocks[i] & b2.blocks[i]
-		if combined == 0 {
+		} else if bigger[i] == 0 {
 			continue
 		}
-		count += bits.OnesCount64(combined)
+		combined := (block & bigger[i])
+		if combined != 0 {
+			count += bits.OnesCount64(combined)
+		}
 	}
 	return count
 }
