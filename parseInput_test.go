@@ -1,243 +1,247 @@
 package main
 
 import (
+	"bytes"
+	"encoding/binary"
 	"fmt"
+	"io"
+	"log"
 	"os"
 	"testing"
 
-	"github.com/pkg/bson"
+	// "github.com/pkg/bson"
+	"gopkg.in/mgo.v2/bson"
 )
 
-func TestParseGenomeDoc(t *testing.T) {
-	testFile, err := os.Open("testdata/TestParseGenomeDoc.bson")
-	if err != nil {
-		t.Fatal("Couldn't load test data")
-	}
-	dec := bson.NewDecoder(testFile)
+// func TestParseGenomeDoc(t *testing.T) {
+// 	testFile, err := os.Open("testdata/TestParseGenomeDoc.bson")
+// 	if err != nil {
+// 		t.Fatal("Couldn't load test data")
+// 	}
+// 	dec := bson.NewDecoder(testFile)
 
-	// This should parse fine
-	doc := make(map[string]interface{})
-	if err := dec.Decode(&doc); err != nil {
-		t.Fatal(err)
-	}
-	if fileIDs, err := parseGenomeDoc(doc); err != nil {
-		t.Fatal(err)
-	} else if len(fileIDs) != 3 {
-		t.Fatal("Expected 3 fileIds")
-	} else {
-		expected := []string{"abc", "def", "ghi"}
-		for i, fileID := range fileIDs {
-			if fileID != expected[i] {
-				t.Fatalf("%d: got %s, expected %s\n", i, fileID, expected[i])
-			}
-		}
-	}
+// 	// This should parse fine
+// 	doc := make(map[string]interface{})
+// 	if err := dec.Decode(&doc); err != nil {
+// 		t.Fatal(err)
+// 	}
+// 	if fileIDs, err := parseGenomeDoc(doc); err != nil {
+// 		t.Fatal(err)
+// 	} else if len(fileIDs) != 3 {
+// 		t.Fatal("Expected 3 fileIds")
+// 	} else {
+// 		expected := []string{"abc", "def", "ghi"}
+// 		for i, fileID := range fileIDs {
+// 			if fileID != expected[i] {
+// 				t.Fatalf("%d: got %s, expected %s\n", i, fileID, expected[i])
+// 			}
+// 		}
+// 	}
 
-	// This has a duplicate fileId
-	doc = make(map[string]interface{})
-	if err := dec.Decode(&doc); err != nil {
-		t.Fatal(err)
-	}
-	if fileIDs, err := parseGenomeDoc(doc); err != nil {
-		t.Fatal(err)
-	} else if len(fileIDs) != 2 {
-		t.Fatal("Expected 2 fileIds")
-	} else {
-		expected := []string{"abc", "ghi"}
-		for i, fileID := range fileIDs {
-			if fileID != expected[i] {
-				t.Fatalf("%d: got %s, expected %s\n", i, fileID, expected[i])
-			}
-		}
-	}
+// 	// This has a duplicate fileId
+// 	doc = make(map[string]interface{})
+// 	if err := dec.Decode(&doc); err != nil {
+// 		t.Fatal(err)
+// 	}
+// 	if fileIDs, err := parseGenomeDoc(doc); err != nil {
+// 		t.Fatal(err)
+// 	} else if len(fileIDs) != 2 {
+// 		t.Fatal("Expected 2 fileIds")
+// 	} else {
+// 		expected := []string{"abc", "ghi"}
+// 		for i, fileID := range fileIDs {
+// 			if fileID != expected[i] {
+// 				t.Fatalf("%d: got %s, expected %s\n", i, fileID, expected[i])
+// 			}
+// 		}
+// 	}
 
-	// This doesn't have a fileId
-	doc = make(map[string]interface{})
-	if err := dec.Decode(&doc); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := parseGenomeDoc(doc); err == nil {
-		t.Fatal("Should have thrown an error")
-	}
+// 	// This doesn't have a fileId
+// 	doc = make(map[string]interface{})
+// 	if err := dec.Decode(&doc); err != nil {
+// 		t.Fatal(err)
+// 	}
+// 	if _, err := parseGenomeDoc(doc); err == nil {
+// 		t.Fatal("Should have thrown an error")
+// 	}
 
-	// This isn't a genomes document
-	doc = make(map[string]interface{})
-	if err := dec.Decode(&doc); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := parseGenomeDoc(doc); err == nil {
-		t.Fatal("Should have thrown an error")
-	}
-}
+// 	// This isn't a genomes document
+// 	doc = make(map[string]interface{})
+// 	if err := dec.Decode(&doc); err != nil {
+// 		t.Fatal(err)
+// 	}
+// 	if _, err := parseGenomeDoc(doc); err == nil {
+// 		t.Fatal("Should have thrown an error")
+// 	}
+// }
 
-func TestUpdateScores(t *testing.T) {
-	testFile, err := os.Open("testdata/TestUpdateScores.bson")
-	if err != nil {
-		t.Fatal("Couldn't load test data")
-	}
-	dec := bson.NewDecoder(testFile)
-	doc := make(map[string]interface{})
-	if err := dec.Decode(&doc); err != nil {
-		t.Fatal(err)
-	}
+// func TestUpdateScores(t *testing.T) {
+// 	testFile, err := os.Open("testdata/TestUpdateScores.bson")
+// 	if err != nil {
+// 		t.Fatal("Couldn't load test data")
+// 	}
+// 	dec := bson.NewDecoder(testFile)
+// 	doc := make(map[string]interface{})
+// 	if err := dec.Decode(&doc); err != nil {
+// 		t.Fatal(err)
+// 	}
 
-	scores := NewScores([]string{"abc", "bcd", "cde", "xyz"})
-	scores.Set(scoreDetails{"bcd", "abc", 7, PENDING})
-	scores.Set(scoreDetails{"xyz", "abc", 5, QUEUED})
-	if err := updateScores(scores, doc); err != nil {
-		t.Fatal(err)
-	}
+// 	scores := NewScores([]string{"abc", "bcd", "cde", "xyz"})
+// 	scores.Set(scoreDetails{"bcd", "abc", 7, PENDING})
+// 	scores.Set(scoreDetails{"xyz", "abc", 5, QUEUED})
+// 	if err := updateScores(scores, doc); err != nil {
+// 		t.Fatal(err)
+// 	}
 
-	var testCases = []struct {
-		fileA          string
-		fileB          string
-		expectedValue  int
-		expectedStatus int
-	}{
-		{"abc", "bcd", 1, COMPLETE},
-		{"bcd", "abc", 1, COMPLETE},
-		{"abc", "cde", 2, COMPLETE},
-		{"cde", "abc", 2, COMPLETE},
-		{"abc", "xyz", 5, QUEUED},
-		{"xyz", "abc", 5, QUEUED},
-	}
+// 	var testCases = []struct {
+// 		fileA          string
+// 		fileB          string
+// 		expectedValue  int
+// 		expectedStatus int
+// 	}{
+// 		{"abc", "bcd", 1, COMPLETE},
+// 		{"bcd", "abc", 1, COMPLETE},
+// 		{"abc", "cde", 2, COMPLETE},
+// 		{"cde", "abc", 2, COMPLETE},
+// 		{"abc", "xyz", 5, QUEUED},
+// 		{"xyz", "abc", 5, QUEUED},
+// 	}
 
-	for _, tc := range testCases {
-		actual, err := scores.Get(tc.fileA, tc.fileB)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if actual.value != tc.expectedValue {
-			t.Fatalf("Got %d, expected %d", actual.value, tc.expectedValue)
-		}
-		if actual.status != tc.expectedStatus {
-			t.Fatalf("Got %d, expected %d", actual.status, tc.expectedStatus)
-		}
-	}
-}
+// 	for _, tc := range testCases {
+// 		actual, err := scores.Get(tc.fileA, tc.fileB)
+// 		if err != nil {
+// 			t.Fatal(err)
+// 		}
+// 		if actual.value != tc.expectedValue {
+// 			t.Fatalf("Got %d, expected %d", actual.value, tc.expectedValue)
+// 		}
+// 		if actual.status != tc.expectedStatus {
+// 			t.Fatalf("Got %d, expected %d", actual.status, tc.expectedStatus)
+// 		}
+// 	}
+// }
 
-func TestUpdateProfiles(t *testing.T) {
-	testFile, err := os.Open("testdata/TestUpdateProfiles.bson")
-	if err != nil {
-		t.Fatal("Couldn't load test data")
-	}
-	dec := bson.NewDecoder(testFile)
-	doc := make(map[string]interface{})
-	if err := dec.Decode(&doc); err != nil {
-		t.Fatal(err)
-	}
+// func TestUpdateProfiles(t *testing.T) {
+// 	testFile, err := os.Open("testdata/TestUpdateProfiles.bson")
+// 	if err != nil {
+// 		t.Fatal("Couldn't load test data")
+// 	}
+// 	dec := bson.NewDecoder(testFile)
+// 	doc := make(map[string]interface{})
+// 	if err := dec.Decode(&doc); err != nil {
+// 		t.Fatal(err)
+// 	}
 
-	profiles := make(map[string]Profile)
-	if err := updateProfiles(profiles, doc); err != nil {
-		t.Fatal(err)
-	}
+// 	profiles := make(map[string]Profile)
+// 	if err := updateProfiles(profiles, doc); err != nil {
+// 		t.Fatal(err)
+// 	}
 
-	var (
-		p  Profile
-		ok bool
-	)
-	if p, ok = profiles["abc"]; !ok {
-		t.Fatal("doc is missing")
-	}
+// 	var (
+// 		p  Profile
+// 		ok bool
+// 	)
+// 	if p, ok = profiles["abc"]; !ok {
+// 		t.Fatal("doc is missing")
+// 	}
 
-	if actual, expected := p.FileID, "abc"; actual != expected {
-		t.Fatalf("Expected %s, got %s\n", expected, actual)
-	}
-	if actual, expected := p.OrganismID, "1280"; actual != expected {
-		t.Fatalf("Expected %s, got %s\n", expected, actual)
-	}
-	if actual, expected := len(p.Matches), 2; actual != expected {
-		t.Fatalf("Expected %d, got %d\n", expected, actual)
-	}
-	if actual, expected := p.Matches["foo"], 1; int(actual.(int32)) != expected {
-		t.Fatalf("Expected %d, got %d\n", expected, actual)
-	}
-	if actual, expected := p.Matches["bar"], "xyz"; actual.(string) != expected {
-		t.Fatalf("Expected %s, got %s\n", expected, actual)
-	}
-}
+// 	if actual, expected := p.FileID, "abc"; actual != expected {
+// 		t.Fatalf("Expected %s, got %s\n", expected, actual)
+// 	}
+// 	if actual, expected := p.OrganismID, "1280"; actual != expected {
+// 		t.Fatalf("Expected %s, got %s\n", expected, actual)
+// 	}
+// 	if actual, expected := len(p.Matches), 2; actual != expected {
+// 		t.Fatalf("Expected %d, got %d\n", expected, actual)
+// 	}
+// 	if actual, expected := p.Matches["foo"], 1; int(actual.(int32)) != expected {
+// 		t.Fatalf("Expected %d, got %d\n", expected, actual)
+// 	}
+// 	if actual, expected := p.Matches["bar"], "xyz"; actual.(string) != expected {
+// 		t.Fatalf("Expected %s, got %s\n", expected, actual)
+// 	}
+// }
 
-func TestCheckProfiles(t *testing.T) {
-	profiles := make(map[string]Profile)
-	scores := NewScores([]string{"abc", "def"})
+// func TestCheckProfiles(t *testing.T) {
+// 	profiles := make(map[string]Profile)
+// 	scores := NewScores([]string{"abc", "def"})
 
-	scores.Set(scoreDetails{"abc", "def", 0, COMPLETE})
-	if err := checkProfiles(profiles, scores); err != nil {
-		t.Fatal("Should be OK")
-	}
+// 	scores.Set(scoreDetails{"abc", "def", 0, COMPLETE})
+// 	if err := checkProfiles(profiles, scores); err != nil {
+// 		t.Fatal("Should be OK")
+// 	}
 
-	profiles["abc"] = Profile{
-		bson.ObjectId{byte(0)},
-		"1280",
-		"abc",
-		true,
-		"v0",
-		make(map[string]interface{}),
-	}
+// 	profiles["abc"] = Profile{
+// 		bson.ObjectId{byte(0)},
+// 		"1280",
+// 		"abc",
+// 		true,
+// 		"v0",
+// 		make(map[string]interface{}),
+// 	}
 
-	if err := checkProfiles(profiles, scores); err != nil {
-		t.Fatal("Should be OK")
-	}
+// 	if err := checkProfiles(profiles, scores); err != nil {
+// 		t.Fatal("Should be OK")
+// 	}
 
-	scores.Set(scoreDetails{"abc", "def", 0, PENDING})
-	if err := checkProfiles(profiles, scores); err == nil {
-		t.Fatal("Should has failed")
-	}
+// 	scores.Set(scoreDetails{"abc", "def", 0, PENDING})
+// 	if err := checkProfiles(profiles, scores); err == nil {
+// 		t.Fatal("Should has failed")
+// 	}
 
-	profiles["def"] = Profile{
-		bson.ObjectId{byte(0)},
-		"1280",
-		"def",
-		true,
-		"v0",
-		make(map[string]interface{}),
-	}
-	if err := checkProfiles(profiles, scores); err != nil {
-		t.Fatal("Should be OK")
-	}
-}
+// 	profiles["def"] = Profile{
+// 		bson.ObjectId{byte(0)},
+// 		"1280",
+// 		"def",
+// 		true,
+// 		"v0",
+// 		make(map[string]interface{}),
+// 	}
+// 	if err := checkProfiles(profiles, scores); err != nil {
+// 		t.Fatal("Should be OK")
+// 	}
+// }
 
-func TestParse(t *testing.T) {
-	testFile, err := os.Open("testdata/TestParse.bson")
-	if err != nil {
-		t.Fatal("Couldn't load test data")
-	}
-	fileIDs, profiles, scores, err := parse(testFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(fileIDs) != 4 {
-		t.Fatal("Expected 4 fileIds")
-	}
-	if len(profiles) != 2 {
-		t.Fatal("Expected 2 profiles")
-	}
-	if len(scores.scores) != 6 {
-		t.Fatal("Expected 6 scores")
-	}
-}
+// func TestParse(t *testing.T) {
+// 	testFile, err := os.Open("testdata/TestParse.bson")
+// 	if err != nil {
+// 		t.Fatal("Couldn't load test data")
+// 	}
+// 	fileIDs, profiles, scores, err := parse(testFile)
+// 	if err != nil {
+// 		t.Fatal(err)
+// 	}
+// 	if len(fileIDs) != 4 {
+// 		t.Fatal("Expected 4 fileIds")
+// 	}
+// 	if len(profiles) != 2 {
+// 		t.Fatal("Expected 2 profiles")
+// 	}
+// 	if len(scores.scores) != 6 {
+// 		t.Fatal("Expected 6 scores")
+// 	}
+// }
 
-func TestAllParse(t *testing.T) {
-	var nFileIDs, expected int
-	testFile, err := os.Open("testdata/all_staph.bson")
-	if err != nil {
-		t.Fatal("Couldn't load test data")
-	}
-	fileIDs, profiles, scores, err := parse(testFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if nFileIDs, expected = len(fileIDs), 12056; nFileIDs != expected {
-		t.Fatalf("Expected %d fileIds, got %d\n", expected, nFileIDs)
-	}
-	if actual, expected := len(profiles), nFileIDs; actual != expected {
-		t.Fatalf("Expected %d profiles, got %d\n", expected, actual)
-	}
-	if actual, expected := len(scores.scores), nFileIDs*(nFileIDs-1)/2; actual != expected {
-		t.Fatalf("Expected %d scores, got %d\n", expected, actual)
-	}
-	// }
-}
+// func TestAllParse(t *testing.T) {
+// 	var nFileIDs, expected int
+// 	testFile, err := os.Open("testdata/all_staph.bson")
+// 	if err != nil {
+// 		t.Fatal("Couldn't load test data")
+// 	}
+// 	fileIDs, profiles, scores, err := parse(testFile)
+// 	if err != nil {
+// 		t.Fatal(err)
+// 	}
+// 	if nFileIDs, expected = len(fileIDs), 12056; nFileIDs != expected {
+// 		t.Fatalf("Expected %d fileIds, got %d\n", expected, nFileIDs)
+// 	}
+// 	if actual, expected := len(profiles), nFileIDs; actual != expected {
+// 		t.Fatalf("Expected %d profiles, got %d\n", expected, actual)
+// 	}
+// 	if actual, expected := len(scores.scores), nFileIDs*(nFileIDs-1)/2; actual != expected {
+// 		t.Fatalf("Expected %d scores, got %d\n", expected, actual)
+// 	}
+// }
 
 func BenchmarkScores(b *testing.B) {
 	fileIDs := make([]string, 1000)
@@ -280,44 +284,87 @@ func TestNewScores(t *testing.T) {
 	}
 }
 
-// func BenchmarkReadMaps(b *testing.B) {
-// 	dec := bson.NewDecoder(r)
-// 	doc := make(M)
-// 	err = nil
+func BenchmarkReadStructs(b *testing.B) {
+	log.Printf("Running with N=%d", b.N)
+	type deepStruct struct {
+		A struct {
+			B []struct {
+				C int32 `bson:"C"`
+			} `bson:"B"`
+		} `bson:"A"`
+	}
 
-// 	if err = dec.Decode(&doc); err != nil {
-// 		return
-// 	} else if _, ok := doc["genomes"]; ok {
-// 		fileIDs, err = parseGenomeDoc(doc)
-// 	}
-// 	if err != nil {
-// 		err = errors.New("Expected 'genomes' in first document")
-// 		return
-// 	}
-// 	log.Printf("Received %d fileIds\n", len(fileIDs))
+	testFile, err := os.Open("testdata/deepStruct.bson")
+	if err != nil {
+		b.Fatal("Couldn't load test data")
+	}
+	for docCount := 0; docCount < b.N; docCount++ {
+		var header [4]byte
+		n, err := io.ReadFull(testFile, header[:])
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			b.Fatal(err)
+		}
+		if n < 4 {
+			b.Fatal("ErrTooShort")
+		}
+		doclen := int64(binary.LittleEndian.Uint32(header[:])) - 4
+		r := io.LimitReader(testFile, doclen)
+		buf := bytes.NewBuffer(header[:])
+		nn, err := io.Copy(buf, r)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if nn != int64(doclen) {
+			b.Fatal("io.ErrUnexpectedEOF")
+		}
+		var doc deepStruct
+		if err := bson.Unmarshal(buf.Bytes(), &doc); err != nil {
+			b.Fatal(err)
+		}
+		if len(doc.A.B) != 2000 {
+			b.Fatal("Parsing error")
+		}
+	}
+}
 
-// 	scores = NewScores(fileIDs)
-// 	profiles = make(map[string]Profile)
-
-// 	for docCount := 1; ; docCount++ {
-// 		doc = make(M)
-// 		if err = dec.Decode(&doc); err == io.EOF {
-// 			log.Printf("Finished parsing %d documents\n", docCount-1)
-// 			break
-// 		} else if err != nil {
-// 			return
-// 		} else if _, ok := doc["scores"]; ok {
-// 			updateScores(scores, doc)
-// 		} else if _, ok := doc["analysis"]; ok {
-// 			updateProfiles(profiles, doc)
-// 		} else {
-// 			log.Printf("Document %d is an unknown type\n", docCount)
-// 		}
-// 		if docCount%1000 == 0 {
-// 			log.Printf("Parsed %d documents so far\n", docCount)
-// 		}
-// 	}
-// }
+func BenchmarkReadMaps(b *testing.B) {
+	log.Printf("Running with N=%d", b.N)
+	testFile, err := os.Open("testdata/deepStruct.bson")
+	if err != nil {
+		b.Fatal("Couldn't load test data")
+	}
+	for docCount := 0; docCount < b.N; docCount++ {
+		var header [4]byte
+		n, err := io.ReadFull(testFile, header[:])
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			b.Fatal(err)
+		}
+		if n < 4 {
+			b.Fatal("ErrTooShort")
+		}
+		doclen := int64(binary.LittleEndian.Uint32(header[:])) - 4
+		r := io.LimitReader(testFile, doclen)
+		buf := bytes.NewBuffer(header[:])
+		nn, err := io.Copy(buf, r)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if nn != int64(doclen) {
+			b.Fatal("io.ErrUnexpectedEOF")
+		}
+		doc := make(M)
+		if err := bson.Unmarshal(buf.Bytes(), &doc); err != nil {
+			b.Fatal(err)
+		}
+		if len(doc["A"].(M)["B"].(L)) != 2000 {
+			b.Fatal("Parsing error")
+		}
+	}
+}
 
 // func BenchmarkData(b *testing.B) {
 // 	var (
