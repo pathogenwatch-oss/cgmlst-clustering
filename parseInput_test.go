@@ -3,10 +3,12 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"os"
+	"sync"
 	"testing"
 
 	// "github.com/pkg/bson"
@@ -222,26 +224,26 @@ import (
 // 	}
 // }
 
-// func TestAllParse(t *testing.T) {
-// 	var nFileIDs, expected int
-// 	testFile, err := os.Open("testdata/all_staph.bson")
-// 	if err != nil {
-// 		t.Fatal("Couldn't load test data")
-// 	}
-// 	fileIDs, profiles, scores, err := parse(testFile)
-// 	if err != nil {
-// 		t.Fatal(err)
-// 	}
-// 	if nFileIDs, expected = len(fileIDs), 12056; nFileIDs != expected {
-// 		t.Fatalf("Expected %d fileIds, got %d\n", expected, nFileIDs)
-// 	}
-// 	if actual, expected := len(profiles), nFileIDs; actual != expected {
-// 		t.Fatalf("Expected %d profiles, got %d\n", expected, actual)
-// 	}
-// 	if actual, expected := len(scores.scores), nFileIDs*(nFileIDs-1)/2; actual != expected {
-// 		t.Fatalf("Expected %d scores, got %d\n", expected, actual)
-// 	}
-// }
+func TestAllParse(t *testing.T) {
+	var nFileIDs, expected int
+	testFile, err := os.Open("testdata/all_staph.bson")
+	if err != nil {
+		t.Fatal("Couldn't load test data")
+	}
+	fileIDs, profiles, scores, err := parse(testFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nFileIDs, expected = len(fileIDs), 12056; nFileIDs != expected {
+		t.Fatalf("Expected %d fileIds, got %d\n", expected, nFileIDs)
+	}
+	if actual, expected := len(profiles), nFileIDs; actual != expected {
+		t.Fatalf("Expected %d profiles, got %d\n", expected, actual)
+	}
+	if actual, expected := len(scores.scores), nFileIDs*(nFileIDs-1)/2; actual != expected {
+		t.Fatalf("Expected %d scores, got %d\n", expected, actual)
+	}
+}
 
 func BenchmarkScores(b *testing.B) {
 	fileIDs := make([]string, 1000)
@@ -366,14 +368,173 @@ func BenchmarkReadMaps(b *testing.B) {
 	}
 }
 
+func readBsonDocs(r io.Reader) (chan []byte, chan error) {
+	docs := make(chan []byte, 50)
+	errChan := make(chan error)
+
+	go func() {
+		defer close(docs)
+		defer close(errChan)
+		for nDoc := 0; nDoc < 5000; nDoc++ {
+			var header [4]byte
+			n, err := io.ReadFull(r, header[:])
+			if err == io.EOF {
+				return
+			} else if err != nil {
+				log.Println(err)
+				errChan <- err
+				return
+			}
+			if n < 4 {
+				log.Println("bson document too short")
+				errChan <- errors.New("bson document too short")
+				return
+			}
+			doclen := int64(binary.LittleEndian.Uint32(header[:])) - 4
+			r := io.LimitReader(r, doclen)
+			buf := bytes.NewBuffer(header[:])
+			nn, err := io.Copy(buf, r)
+			if err != nil {
+				log.Println(err)
+				errChan <- err
+				return
+			}
+			if nn != int64(doclen) {
+				log.Println(err)
+				errChan <- io.ErrUnexpectedEOF
+				return
+			}
+			docs <- buf.Bytes()
+		}
+	}()
+
+	return docs, errChan
+}
+
+func TestParseStructs(t *testing.T) {
+	type Genomes struct {
+		Genomes []struct {
+			FileID string `bson:"fileId"`
+		} `bson:"genomes"`
+	}
+
+	type Profile struct {
+		ID         string `bson:"_id"`
+		OrganismID string `bson:"organismId"`
+		FileId     string `bson:"fileId"`
+		Public     bool   `bson:"public"`
+		Analysis   struct {
+			CgMlst struct {
+				Version string `bson:"__v"`
+				Matches []struct {
+					Gene string      `bson:"gene"`
+					Id   interface{} `bson:"id"`
+				} `bson:"matches"`
+			} `bson:"cgmlst"`
+		} `bson:"analysis"`
+	}
+
+	testFile, err := os.Open("testdata/all_staph.bson")
+	if err != nil {
+		t.Fatal("Couldn't load test data")
+	}
+
+	docs, errChan := readBsonDocs(testFile)
+
+	var wg sync.WaitGroup
+
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func(worker int) {
+			defer wg.Done()
+			var (
+				more bool
+				doc  []byte
+			)
+			var gene string
+			for docCount := 0; ; docCount++ {
+				select {
+				case doc, more = <-docs:
+					if !more {
+						log.Printf("Worker %d saw gene %s\n", worker, gene)
+						return
+					}
+					if bytes.Contains(doc, []byte("cgmlst")) {
+						var p Profile
+						if err := bson.Unmarshal(doc, &p); err != nil {
+							t.Fatal(err)
+							return
+						}
+						for _, m := range p.Analysis.CgMlst.Matches {
+							gene = m.Gene
+						}
+					} else if bytes.Contains(doc, []byte("genomes")) {
+						var g Genomes
+						if err := bson.Unmarshal(doc, &g); err != nil {
+							t.Fatal(err)
+							return
+						}
+					}
+					if docCount%100 == 0 {
+						log.Printf("Worker %d parsed %d docs\n", worker, docCount)
+					}
+				case err, more := <-errChan:
+					if more {
+						log.Println(err)
+						t.Fatal(err)
+					}
+					return
+				}
+			}
+		}(i)
+	}
+
+	wg.Wait()
+}
+
+func TestRace(t *testing.T) {
+	numbers := make(chan int)
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		for i := 0; i < 1000; i++ {
+			numbers <- i
+		}
+		close(numbers)
+		wg.Done()
+	}()
+
+	for worker := 0; worker < 50; worker++ {
+		wg.Add(1)
+		go func(worker int) {
+			var seen int
+			for {
+				if _, more := <-numbers; !more {
+					log.Printf("%d has seen %d numbers", worker, seen)
+					wg.Done()
+					return
+				} else {
+					seen++
+					if seen%100 == 0 {
+						log.Printf("%d has seen %d numbers", worker, seen)
+					}
+				}
+			}
+		}(worker)
+	}
+
+	wg.Wait()
+}
+
 // func BenchmarkData(b *testing.B) {
 // 	var (
 // 		doc      M
 // 		err      error
 // 		testFile io.Reader
+// 		fileIDs  []string
 // 	)
 
-// 	scores := make(map[scorePair]score)
 // 	profiles := make(map[string]Profile)
 
 // 	testFile, err = os.Open("testdata/all_staph.bson")
@@ -386,17 +547,20 @@ func BenchmarkReadMaps(b *testing.B) {
 // 	if err = dec.Decode(&doc); err != nil {
 // 		b.Fatal("Expected 'genomes' in first document")
 // 	} else if _, ok := doc["genomes"]; ok {
-// 		_, err = parseGenomeDoc(doc)
+// 		fileIDs, err = parseGenomeDoc(doc)
 // 	}
 // 	if err != nil {
 // 		b.Fatal("Expected 'genomes' in first document")
 // 	}
+
+// 	scores := NewScores(fileIDs)
 
 // 	n := b.N
 // 	if b.N > 12000 {
 // 		n = 12000
 // 		log.Println("Capping benchmark at 12000")
 // 	}
+// 	b.ResetTimer()
 // 	for i := 1; i < n; i++ {
 // 		doc = make(M)
 // 		if err := dec.Decode(&doc); err != nil {
