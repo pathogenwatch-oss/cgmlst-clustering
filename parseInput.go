@@ -1,12 +1,15 @@
 package main
 
 import (
+	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"log"
+	"sync"
 
-	"github.com/pkg/bson"
+	"gopkg.in/mgo.v2/bson"
 )
 
 const (
@@ -18,47 +21,57 @@ const (
 type M = map[string]interface{}
 type L = []interface{}
 
-func parseGenomeDoc(doc M) (fileIDs []string, err error) {
+type GenomesDoc struct {
+	Genomes []struct {
+		FileID string `bson:"fileId"`
+	} `bson:"genomes"`
+}
+
+type ProfileDoc struct {
+	ID         bson.ObjectId `bson:"_id"`
+	OrganismID string        `bson:"organismId"`
+	FileId     string        `bson:"fileId"`
+	Public     bool          `bson:"public"`
+	Analysis   struct {
+		CgMlst struct {
+			Version string `bson:"__v"`
+			Matches []struct {
+				Gene string      `bson:"gene"`
+				Id   interface{} `bson:"id"`
+			} `bson:"matches"`
+		} `bson:"cgmlst"`
+	} `bson:"analysis"`
+}
+
+type ScoreDoc struct {
+	FileId string           `bson:"fileId"`
+	Scores map[string]int32 `bson:"scores"`
+}
+
+func parseGenomeDoc(doc GenomesDoc) (fileIDs []string, err error) {
 	fileIDs = make([]string, 0)
 	seen := make(map[string]bool)
 
-	genomes, ok := doc["genomes"].(L)
-	if !ok {
-		return nil, errors.New("Not a genomes doc")
-	}
-	for _, rawGenome := range genomes {
-		genome := rawGenome.(M)
-		fileID, ok := genome["fileId"].(string)
-		if !ok {
-			return nil, errors.New("Couldn't parse fileId")
-		}
-		if _, isSeen := seen[fileID]; isSeen {
+	for _, g := range doc.Genomes {
+		if _, isSeen := seen[g.FileID]; isSeen {
 			continue
 		}
-		fileIDs = append(fileIDs, fileID)
-		seen[fileID] = true
+		fileIDs = append(fileIDs, g.FileID)
+		seen[g.FileID] = true
 	}
 	return
 }
 
-func updateScores(scores scoresStore, doc M) error {
-	fileA, ok := doc["fileId"].(string)
-	if !ok {
-		return errors.New("Score doc doesn't have a fileId")
+func updateScores(scores scoresStore, doc ScoreDoc) error {
+	if doc.FileId == "" {
+		return errors.New("Profile doc had an invalid fileId")
 	}
-	docScores, ok := doc["scores"].(M)
-	if !ok {
-		return errors.New("Score doc doesn't have scores")
-	}
-	for fileB, rScore := range docScores {
-		if value, ok := rScore.(int32); !ok {
-			// Log the error but keep parsing as many scores as possible
-			return errors.New("Problem parsing one or more scores")
-		} else {
-			err := scores.Set(scoreDetails{fileA, fileB, int(value), COMPLETE})
-			if err != nil {
-				return err
-			}
+
+	fileA := doc.FileId
+	for fileB, value := range doc.Scores {
+		err := scores.Set(scoreDetails{fileA, fileB, int(value), COMPLETE})
+		if err != nil {
+			return err
 		}
 	}
 	return nil
@@ -73,62 +86,25 @@ type Profile struct {
 	Matches    M
 }
 
-func updateProfiles(profiles map[string]Profile, doc M) error {
-	var (
-		ok               bool
-		analysis, cgmlst M
-		rMatches         L
-		gene             string
-		allele           interface{}
-	)
-	var p Profile
-	if p.FileID, ok = doc["fileId"].(string); !ok {
-		return errors.New("No fileId in doc")
+func updateProfiles(profiles map[string]Profile, doc ProfileDoc) error {
+	if doc.FileId == "" {
+		return errors.New("Profile doc had an invalid fileId")
 	}
 
-	if _, exists := profiles[p.FileID]; exists {
+	if _, exists := profiles[doc.FileId]; exists {
 		// This is a duplicate of something we've already parsed
 		return nil
 	}
 
-	if p.ID, ok = doc["_id"].(bson.ObjectId); !ok {
-		return errors.New("No _id in doc")
-	}
-	if p.OrganismID, ok = doc["organismId"].(string); !ok {
-		return errors.New("No organismId in doc")
-	}
-	if p.Public, ok = doc["public"].(bool); !ok {
-		return errors.New("No public field in doc")
-	}
-
-	analysis, ok = doc["analysis"].(M)
-	if !ok {
-		return errors.New("No analysis in doc")
-	}
-	cgmlst, ok = analysis["cgmlst"].(M)
-	if !ok {
-		return errors.New("No cgmlst in doc")
-	}
-	if p.Version, ok = cgmlst["__v"].(string); !ok {
-		return errors.New("No version in doc")
-	}
-	if rMatches, ok = cgmlst["matches"].(L); !ok {
-		return errors.New("No matches in doc")
-	}
-
+	var p Profile
+	p.FileID = doc.FileId
+	p.ID = doc.ID
+	p.OrganismID = doc.OrganismID
+	p.Public = doc.Public
+	p.Version = doc.Analysis.CgMlst.Version
 	p.Matches = make(M)
-	for _, rMatch := range rMatches {
-		match, ok := rMatch.(M)
-		if !ok {
-			return errors.New("Couldn't parse match")
-		}
-		if gene, ok = match["gene"].(string); !ok {
-			return errors.New("Couldn't parse gene in profile")
-		}
-		if allele, ok = match["id"]; !ok {
-			return errors.New("Couldn't parse allele in profile")
-		}
-		p.Matches[gene] = allele
+	for _, m := range doc.Analysis.CgMlst.Matches {
+		p.Matches[m.Gene] = m.Id
 	}
 
 	profiles[p.FileID] = p
@@ -213,44 +189,144 @@ func checkProfiles(profiles map[string]Profile, scores scoresStore) error {
 	return nil
 }
 
-func parse(r io.Reader) (fileIDs []string, profiles map[string]Profile, scores scoresStore, err error) {
-	dec := bson.NewDecoder(r)
-	doc := make(M)
-	err = nil
+func readBsonDocs(r io.Reader, errChan chan error) chan []byte {
+	docs := make(chan []byte, 50)
 
-	if err = dec.Decode(&doc); err != nil {
+	go func() {
+		defer close(docs)
+		for {
+			// Loop based on https://github.com/pkg/bson/blob/af6d2c694850d177d255eef9610935cb2e5e6a7b/bson.go#L59
+			// by [Dave Cheney](https://github.com/davecheney)
+			// Copyright (c) 2014, David Cheney <dave@cheney.net>
+			// BSD 2-Clause "Simplified" License
+			var header [4]byte
+			n, err := io.ReadFull(r, header[:])
+			if err == io.EOF {
+				return
+			} else if err != nil {
+				log.Println(err)
+				errChan <- err
+				return
+			}
+			if n < 4 {
+				log.Println("bson document too short")
+				errChan <- errors.New("bson document too short")
+				return
+			}
+			doclen := int64(binary.LittleEndian.Uint32(header[:])) - 4
+			r := io.LimitReader(r, doclen)
+			buf := bytes.NewBuffer(header[:])
+			nn, err := io.Copy(buf, r)
+			if err != nil {
+				log.Println(err)
+				errChan <- err
+				return
+			}
+			if nn != int64(doclen) {
+				log.Println(err)
+				errChan <- io.ErrUnexpectedEOF
+				return
+			}
+			docs <- buf.Bytes()
+		}
+	}()
+
+	return docs
+}
+
+func parse(r io.Reader) (fileIDs []string, profiles map[string]Profile, scores scoresStore, err error) {
+	err = nil
+	errChan := make(chan error)
+	docs := readBsonDocs(r, errChan)
+	numWorkers := 5
+	var wg sync.WaitGroup
+
+	firstDoc := <-docs
+	var genomes GenomesDoc
+	if parseErr := bson.Unmarshal(firstDoc, &genomes); parseErr != nil {
+		err = errors.New("Could not get list of genomes from first document")
 		return
-	} else if _, ok := doc["genomes"]; ok {
-		fileIDs, err = parseGenomeDoc(doc)
 	}
-	if err != nil {
-		err = errors.New("Expected 'genomes' in first document")
+	if fileIDs, err = parseGenomeDoc(genomes); err != nil {
 		return
 	}
-	log.Printf("Received %d fileIds\n", len(fileIDs))
 
 	scores = NewScores(fileIDs)
+	profilesChan := make(chan ProfileDoc, 20)
 	profiles = make(map[string]Profile)
 
-	for docCount := 1; ; docCount++ {
-		doc = make(M)
-		if err = dec.Decode(&doc); err == io.EOF {
-			log.Printf("Finished parsing %d documents\n", docCount-1)
-			break
-		} else if err != nil {
-			return
-		} else if _, ok := doc["scores"]; ok {
-			updateScores(scores, doc)
-		} else if _, ok := doc["analysis"]; ok {
-			updateProfiles(profiles, doc)
-		} else {
-			log.Printf("Document %d is an unknown type\n", docCount)
-		}
-		if docCount%1000 == 0 {
-			log.Printf("Parsed %d documents so far\n", docCount)
-		}
+	for worker := 0; worker < numWorkers; worker++ {
+		wg.Add(1)
+		go func(worker int) {
+			defer wg.Done()
+			var (
+				doc  []byte
+				more bool
+				p    ProfileDoc
+				s    ScoreDoc
+			)
+			for nDocs := 1; ; nDocs++ {
+				if doc, more = <-docs; !more {
+					log.Printf("Worker %d is done after %d documents\n", worker, nDocs)
+					return
+				}
+				if bytes.Contains(doc, []byte("cgmlst")) {
+					if err := bson.Unmarshal(doc, &p); err != nil {
+						errChan <- err
+						return
+					}
+					profilesChan <- p
+				} else if bytes.Contains(doc, []byte("scores")) {
+					if err := bson.Unmarshal(doc, &s); err != nil {
+						errChan <- err
+						return
+					}
+					if err := updateScores(scores, s); err != nil {
+						errChan <- err
+						return
+					}
+				} else {
+					errChan <- fmt.Errorf("unknown document type found by worker %d", worker)
+					return
+				}
+				if nDocs%100 == 0 {
+					log.Printf("Worker %d parsed %d docs", worker, nDocs)
+				}
+			}
+		}(worker)
 	}
 
-	err = checkProfiles(profiles, scores)
+	done := make(chan bool)
+	go func() {
+		var (
+			p    ProfileDoc
+			more bool
+		)
+		for {
+			if p, more = <-profilesChan; !more {
+				done <- true
+				return
+			}
+			if err := updateProfiles(profiles, p); err != nil {
+				errChan <- err
+				return
+			}
+		}
+	}()
+
+	go func() {
+		wg.Wait()
+		close(profilesChan)
+	}()
+
+	select {
+	case err = <-errChan:
+		if err != nil {
+			return
+		}
+	case <-done:
+		log.Println("Workers have all finished")
+		err = checkProfiles(profiles, scores)
+	}
 	return
 }
