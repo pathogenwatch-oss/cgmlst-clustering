@@ -86,12 +86,30 @@ type Profile struct {
 	Matches    M
 }
 
-func updateProfiles(profiles map[string]Profile, doc ProfileDoc) error {
+type ProfileStore struct {
+	lookup   map[string]int
+	profiles []Profile
+	seen     []bool
+}
+
+func NewProfileStore(scores *scoresStore) (profiles ProfileStore) {
+	profiles.lookup = scores.lookup
+	profiles.profiles = make([]Profile, len(scores.lookup))
+	profiles.seen = make([]bool, len(profiles.profiles))
+	return
+}
+
+func updateProfiles(profiles ProfileStore, doc ProfileDoc) error {
 	if doc.FileId == "" {
 		return errors.New("Profile doc had an invalid fileId")
 	}
 
-	if _, exists := profiles[doc.FileId]; exists {
+	idx, known := profiles.lookup[doc.FileId]
+	if !known {
+		return fmt.Errorf("unknown fileId %s", doc.FileId)
+	}
+
+	if profiles.seen[idx] {
 		// This is a duplicate of something we've already parsed
 		return nil
 	}
@@ -107,7 +125,8 @@ func updateProfiles(profiles map[string]Profile, doc ProfileDoc) error {
 		p.Matches[m.Gene] = m.Id
 	}
 
-	profiles[p.FileID] = p
+	profiles.profiles[idx] = p
+	profiles.seen[idx] = true
 	return nil
 }
 
@@ -117,11 +136,13 @@ type scoreDetails struct {
 }
 
 type scoresStore struct {
-	lookup map[string]int
-	scores []scoreDetails
+	lookup  map[string]int
+	scores  []scoreDetails
+	fileIDs []string
 }
 
 func NewScores(fileIDs []string) (s scoresStore) {
+	s.fileIDs = fileIDs
 	s.scores = make([]scoreDetails, len(fileIDs)*(len(fileIDs)-1)/2)
 	s.lookup = make(map[string]int)
 	for idx, fileID := range fileIDs {
@@ -174,16 +195,18 @@ func (s scoresStore) Get(fileA string, fileB string) (scoreDetails, error) {
 	return s.scores[idx], nil
 }
 
-func checkProfiles(profiles map[string]Profile, scores scoresStore) error {
-	for _, score := range scores.scores {
-		if score.status != PENDING {
-			continue
-		}
-		if _, exists := profiles[score.fileA]; !exists {
-			return errors.New(fmt.Sprintf("Needed profile for %s\n", score.fileA))
-		}
-		if _, exists := profiles[score.fileB]; !exists {
-			return errors.New(fmt.Sprintf("Needed profile for %s\n", score.fileB))
+func checkProfiles(profiles ProfileStore, scores scoresStore) error {
+	idx := 0
+	for i := 1; i < len(scores.fileIDs); i++ {
+		for j := 0; j < i; j++ {
+			if scores.scores[idx].status == PENDING {
+				if !profiles.seen[i] {
+					return fmt.Errorf("expected profile for %s", scores.fileIDs[i])
+				} else if !profiles.seen[j] {
+					return fmt.Errorf("expected profile for %s", scores.fileIDs[j])
+				}
+			}
+			idx++
 		}
 	}
 	return nil
@@ -252,7 +275,7 @@ func parse(r io.Reader) (fileIDs []string, profiles map[string]Profile, scores s
 	}
 
 	scores = NewScores(fileIDs)
-	profilesChan := make(chan ProfileDoc, 20)
+	profilesStore := NewProfileStore(&scores)
 	profiles = make(map[string]Profile)
 
 	for worker := 0; worker < numWorkers; worker++ {
@@ -275,7 +298,10 @@ func parse(r io.Reader) (fileIDs []string, profiles map[string]Profile, scores s
 						errChan <- err
 						return
 					}
-					profilesChan <- p
+					if err := updateProfiles(profilesStore, p); err != nil {
+						errChan <- err
+						return
+					}
 				} else if bytes.Contains(doc, []byte("scores")) {
 					if err := bson.Unmarshal(doc, &s); err != nil {
 						errChan <- err
@@ -298,25 +324,9 @@ func parse(r io.Reader) (fileIDs []string, profiles map[string]Profile, scores s
 
 	done := make(chan bool)
 	go func() {
-		var (
-			p    ProfileDoc
-			more bool
-		)
-		for {
-			if p, more = <-profilesChan; !more {
-				done <- true
-				return
-			}
-			if err := updateProfiles(profiles, p); err != nil {
-				errChan <- err
-				return
-			}
-		}
-	}()
-
-	go func() {
 		wg.Wait()
-		close(profilesChan)
+		done <- true
+		return
 	}()
 
 	select {
@@ -326,7 +336,14 @@ func parse(r io.Reader) (fileIDs []string, profiles map[string]Profile, scores s
 		}
 	case <-done:
 		log.Println("Workers have all finished")
-		err = checkProfiles(profiles, scores)
+		err = checkProfiles(profilesStore, scores)
 	}
+
+	if err == nil {
+		for _, p := range profilesStore.profiles {
+			profiles[p.FileID] = p
+		}
+	}
+
 	return
 }
