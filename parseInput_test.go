@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/pkg/bson"
+	"gopkg.in/mgo.v2/bson"
 )
 
 // func TestParseGenomeDoc(t *testing.T) {
@@ -226,6 +226,9 @@ func TestAllParse(t *testing.T) {
 	fileIDs, profiles, scores, err := parse(testFile)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if actual, expected := len(profiles["150d0667cddc435df65370be0f4d1e27a86240b4"].Matches), 2203; actual != expected {
+		t.Fatalf("Expected %d matches, got %d\n", expected, actual)
 	}
 	if nFileIDs, expected = len(fileIDs), 12056; nFileIDs != expected {
 		t.Fatalf("Expected %d fileIds, got %d\n", expected, nFileIDs)

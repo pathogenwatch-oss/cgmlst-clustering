@@ -27,24 +27,26 @@ type GenomesDoc struct {
 	} `bson:"genomes"`
 }
 
+type Match struct {
+	Gene string
+	ID   interface{}
+}
+
 type ProfileDoc struct {
-	ID         bson.ObjectId `bson:"_id"`
-	OrganismID string        `bson:"organismId"`
-	FileId     string        `bson:"fileId"`
-	Public     bool          `bson:"public"`
+	ID         ObjectID `bson:"_id"`
+	OrganismID string   `bson:"organismId"`
+	FileID     string   `bson:"fileId"`
+	Public     bool     `bson:"public"`
 	Analysis   struct {
 		CgMlst struct {
-			Version string `bson:"__v"`
-			Matches []struct {
-				Gene string      `bson:"gene"`
-				Id   interface{} `bson:"id"`
-			} `bson:"matches"`
+			Version string  `bson:"__v"`
+			Matches []Match `bson:"matches"`
 		} `bson:"cgmlst"`
 	} `bson:"analysis"`
 }
 
 type ScoreDoc struct {
-	FileId string           `bson:"fileId"`
+	FileID string           `bson:"fileId"`
 	Scores map[string]int32 `bson:"scores"`
 }
 
@@ -63,11 +65,11 @@ func parseGenomeDoc(doc GenomesDoc) (fileIDs []string, err error) {
 }
 
 func updateScores(scores scoresStore, doc ScoreDoc) error {
-	if doc.FileId == "" {
+	if doc.FileID == "" {
 		return errors.New("Profile doc had an invalid fileId")
 	}
 
-	fileA := doc.FileId
+	fileA := doc.FileID
 	for fileB, value := range doc.Scores {
 		err := scores.Set(scoreDetails{fileA, fileB, int(value), COMPLETE})
 		if err != nil {
@@ -78,7 +80,7 @@ func updateScores(scores scoresStore, doc ScoreDoc) error {
 }
 
 type Profile struct {
-	ID         bson.ObjectId
+	ID         ObjectID
 	OrganismID string
 	FileID     string
 	Public     bool
@@ -100,13 +102,13 @@ func NewProfileStore(scores *scoresStore) (profiles ProfileStore) {
 }
 
 func updateProfiles(profiles ProfileStore, doc ProfileDoc) error {
-	if doc.FileId == "" {
+	if doc.FileID == "" {
 		return errors.New("Profile doc had an invalid fileId")
 	}
 
-	idx, known := profiles.lookup[doc.FileId]
+	idx, known := profiles.lookup[doc.FileID]
 	if !known {
-		return fmt.Errorf("unknown fileId %s", doc.FileId)
+		return fmt.Errorf("unknown fileId %s", doc.FileID)
 	}
 
 	if profiles.seen[idx] {
@@ -115,14 +117,14 @@ func updateProfiles(profiles ProfileStore, doc ProfileDoc) error {
 	}
 
 	var p Profile
-	p.FileID = doc.FileId
+	p.FileID = doc.FileID
 	p.ID = doc.ID
 	p.OrganismID = doc.OrganismID
 	p.Public = doc.Public
 	p.Version = doc.Analysis.CgMlst.Version
 	p.Matches = make(M)
 	for _, m := range doc.Analysis.CgMlst.Matches {
-		p.Matches[m.Gene] = m.Id
+		p.Matches[m.Gene] = m.ID
 	}
 
 	profiles.profiles[idx] = p
@@ -217,6 +219,7 @@ func readBsonDocs(r io.Reader, errChan chan error) chan []byte {
 
 	go func() {
 		defer close(docs)
+		// for nDocs := 0; nDocs < 5000; nDocs++ {
 		for {
 			// Loop based on https://github.com/pkg/bson/blob/af6d2c694850d177d255eef9610935cb2e5e6a7b/bson.go#L59
 			// by [Dave Cheney](https://github.com/davecheney)
@@ -273,6 +276,7 @@ func parse(r io.Reader) (fileIDs []string, profiles map[string]Profile, scores s
 	if fileIDs, err = parseGenomeDoc(genomes); err != nil {
 		return
 	}
+	log.Printf("Found %d unique fileIds\n", len(fileIDs))
 
 	scores = NewScores(fileIDs)
 	profilesStore := NewProfileStore(&scores)
@@ -294,7 +298,7 @@ func parse(r io.Reader) (fileIDs []string, profiles map[string]Profile, scores s
 					return
 				}
 				if bytes.Contains(doc, []byte("cgmlst")) {
-					if err := bson.Unmarshal(doc, &p); err != nil {
+					if err := Unmarshal(doc, &p); err != nil {
 						errChan <- err
 						return
 					}

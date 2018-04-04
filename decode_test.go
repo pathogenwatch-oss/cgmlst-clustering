@@ -3,6 +3,8 @@ package main
 import (
 	"os"
 	"testing"
+
+	"gopkg.in/mgo.v2/bson"
 )
 
 func TestCustomParse(t *testing.T) {
@@ -13,8 +15,8 @@ func TestCustomParse(t *testing.T) {
 	errc := make(chan error)
 	c := readBsonDocs(testFile, errc)
 	doc := <-c
-	var p ProfileDoc2
-	if err := unmarshal(doc, &p); err != nil {
+	var p ProfileDoc
+	if err := Unmarshal(doc, &p); err != nil {
 		t.Fatal(err)
 	}
 	if p.FileID != "1b5be653a771dd81b5d9c290a6ac1c17f8999c97" {
@@ -23,9 +25,9 @@ func TestCustomParse(t *testing.T) {
 	if p.OrganismID != "1280" {
 		t.Fatal("Wrong organismId")
 	}
-	// t.Fatal(len(p.Analysis.Cgmlst.Matches))
-	if len(p.Analysis.Cgmlst.Matches) != 2226 {
-		t.Fatalf("Wrong number of matches %d", len(p.Analysis.Cgmlst.Matches))
+	// t.Fatal(len(p.Analysis.CgMlst.Matches))
+	if len(p.Analysis.CgMlst.Matches) != 2226 {
+		t.Fatalf("Wrong number of matches %d", len(p.Analysis.CgMlst.Matches))
 	}
 }
 
@@ -37,8 +39,8 @@ func BenchmarkCustomParse(b *testing.B) {
 	errc := make(chan error)
 	c := readBsonDocs(testFile, errc)
 	doc := <-c
-	var p ProfileDoc2
-	if err := unmarshal(doc, &p); err != nil {
+	var p ProfileDoc
+	if err := Unmarshal(doc, &p); err != nil {
 		b.Fatal(err)
 	}
 	if p.FileID != "1b5be653a771dd81b5d9c290a6ac1c17f8999c97" {
@@ -49,8 +51,8 @@ func BenchmarkCustomParse(b *testing.B) {
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		var p1 ProfileDoc2
-		if err := unmarshal(doc, &p1); err != nil {
+		var p1 ProfileDoc
+		if err := Unmarshal(doc, &p1); err != nil {
 			b.Fatal(err)
 		}
 	}

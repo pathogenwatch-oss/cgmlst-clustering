@@ -4,27 +4,9 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-
-	"github.com/pkg/bson"
 )
 
-type Match struct {
-	Gene string
-	ID   interface{}
-}
-
-type ProfileDoc2 struct {
-	ID         bson.ObjectId
-	OrganismID string
-	FileID     string
-	Public     bool
-	Analysis   struct {
-		Cgmlst struct {
-			Version string
-			Matches []Match
-		}
-	}
-}
+type ObjectID [12]byte
 
 func trimlast(s []byte) []byte { return s[:len(s)-1] }
 
@@ -228,23 +210,23 @@ func unmarshalMatch(data []byte) Match {
 	return m
 }
 
-func unmarshalMatches(data []byte, d *ProfileDoc2) error {
+func unmarshalMatches(data []byte, d *ProfileDoc) error {
 	iter := reader{bson: data[4 : len(data)-1]}
 	for iter.Next() {
 		_, _, element := iter.Element()
-		d.Analysis.Cgmlst.Matches = append(d.Analysis.Cgmlst.Matches, unmarshalMatch(element))
+		d.Analysis.CgMlst.Matches = append(d.Analysis.CgMlst.Matches, unmarshalMatch(element))
 	}
 	return iter.Err()
 }
 
-func unmarshalCgmlst(data []byte, d *ProfileDoc2) error {
+func unmarshalCgMlst(data []byte, d *ProfileDoc) error {
 	iter := reader{bson: data[4 : len(data)-1]}
 	for iter.Next() {
 		_, ename, element := iter.Element()
 		key := string(trimlast(ename))
 		switch key {
 		case "__v":
-			d.Analysis.Cgmlst.Version = string(trimlast(element))
+			d.Analysis.CgMlst.Version = string(trimlast(element))
 		case "matches":
 			unmarshalMatches(element, d)
 		}
@@ -252,20 +234,20 @@ func unmarshalCgmlst(data []byte, d *ProfileDoc2) error {
 	return iter.Err()
 }
 
-func unmarshalAnalysis(data []byte, d *ProfileDoc2) error {
+func unmarshalAnalysis(data []byte, d *ProfileDoc) error {
 	iter := reader{bson: data[4 : len(data)-1]}
 	for iter.Next() {
 		_, ename, element := iter.Element()
 		key := string(trimlast(ename))
 		switch key {
 		case "cgmlst":
-			unmarshalCgmlst(element, d)
+			unmarshalCgMlst(element, d)
 		}
 	}
 	return iter.Err()
 }
 
-func unmarshal(data []byte, d *ProfileDoc2) error {
+func Unmarshal(data []byte, d *ProfileDoc) error {
 	iter := reader{bson: data[4 : len(data)-1]}
 	for iter.Next() {
 		_, ename, element := iter.Element()
@@ -273,7 +255,7 @@ func unmarshal(data []byte, d *ProfileDoc2) error {
 
 		switch key {
 		case "_id":
-			var oid bson.ObjectId
+			var oid ObjectID
 			copy(oid[:], element)
 			d.ID = oid
 		case "fileId":
@@ -287,8 +269,4 @@ func unmarshal(data []byte, d *ProfileDoc2) error {
 		}
 	}
 	return iter.Err()
-}
-
-func main() {
-	fmt.Println("Decode main")
 }
