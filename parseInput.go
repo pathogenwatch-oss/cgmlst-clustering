@@ -161,15 +161,15 @@ func NewScores(fileIDs []string) (s scoresStore) {
 func (s scoresStore) getIndex(fileA string, fileB string) (int, error) {
 	idxA, ok := s.lookup[fileA]
 	if !ok {
-		return 0, errors.New(fmt.Sprintf("Unknown fileId %s\n", fileA))
+		return 0, fmt.Errorf("unknown fileId %s", fileA)
 	}
 	idxB, ok := s.lookup[fileB]
 	if !ok {
-		return 0, errors.New(fmt.Sprintf("Unknown fileId %s\n", fileB))
+		return 0, fmt.Errorf("unknown fileId %s", fileB)
 	}
 	minIdx, maxIdx := idxA, idxB
 	if idxA == idxB {
-		return 0, errors.New(fmt.Sprintf("fileIds shouldn't both be %\n", fileA))
+		return 0, fmt.Errorf("fileIds shouldn't both be %s", fileA)
 	} else if idxA > idxB {
 		minIdx = idxB
 		maxIdx = idxA
