@@ -247,8 +247,7 @@ func unmarshalAnalysis(data []byte, d *ProfileDoc) error {
 	return iter.Err()
 }
 
-func Unmarshal(data []byte) (*ProfileDoc, error) {
-	profile := ProfileDoc{}
+func Unmarshal(data []byte, profile *ProfileDoc) error {
 	iter := reader{bson: data[4 : len(data)-1]}
 	for iter.Next() {
 		_, ename, element := iter.Element()
@@ -266,8 +265,14 @@ func Unmarshal(data []byte) (*ProfileDoc, error) {
 		case "public":
 			profile.Public = element[0] == 1
 		case "analysis":
-			unmarshalAnalysis(element, &profile)
+			unmarshalAnalysis(element, profile)
 		}
 	}
-	return &profile, iter.Err()
+	return iter.Err()
+}
+
+func makeProfile(data []byte) (*ProfileDoc, error) {
+	profile := ProfileDoc{}
+	err := Unmarshal(data, &profile)
+	return &profile, err
 }

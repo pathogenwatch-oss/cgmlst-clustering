@@ -298,7 +298,7 @@ func parse(r io.Reader) (fileIDs []string, profiles map[string]Profile, scores s
 					return
 				}
 				if bytes.Contains(doc, []byte("cgmlst")) {
-					p, err := Unmarshal(doc)
+					p, err := makeProfile(doc)
 					if err != nil {
 						errChan <- err
 						return
