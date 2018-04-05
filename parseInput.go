@@ -123,9 +123,11 @@ func updateProfiles(profiles ProfileStore, doc ProfileDoc) error {
 	p.Public = doc.Public
 	p.Version = doc.Analysis.CgMlst.Version
 	p.Matches = make(M)
+	// log.Printf("Number of parsed matches: %d", len(doc.Analysis.CgMlst.Matches))
 	for _, m := range doc.Analysis.CgMlst.Matches {
 		p.Matches[m.Gene] = m.ID
 	}
+	// log.Printf("Number of accumulated matches: %d", len(p.Matches))
 
 	profiles.profiles[idx] = p
 	profiles.seen[idx] = true
@@ -289,8 +291,6 @@ func parse(r io.Reader) (fileIDs []string, profiles map[string]Profile, scores s
 			var (
 				doc  []byte
 				more bool
-				p    ProfileDoc
-				s    ScoreDoc
 			)
 			for nDocs := 1; ; nDocs++ {
 				if doc, more = <-docs; !more {
@@ -298,15 +298,17 @@ func parse(r io.Reader) (fileIDs []string, profiles map[string]Profile, scores s
 					return
 				}
 				if bytes.Contains(doc, []byte("cgmlst")) {
-					if err := Unmarshal(doc, &p); err != nil {
+					p, err := Unmarshal(doc)
+					if err != nil {
 						errChan <- err
 						return
 					}
-					if err := updateProfiles(profilesStore, p); err != nil {
+					if err := updateProfiles(profilesStore, *p); err != nil {
 						errChan <- err
 						return
 					}
 				} else if bytes.Contains(doc, []byte("scores")) {
+					var s ScoreDoc
 					if err := bson.Unmarshal(doc, &s); err != nil {
 						errChan <- err
 						return

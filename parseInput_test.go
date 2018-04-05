@@ -227,7 +227,7 @@ func TestAllParse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if actual, expected := len(profiles["150d0667cddc435df65370be0f4d1e27a86240b4"].Matches), 2203; actual != expected {
+	if actual, expected := len(profiles["cdc283e48ee0f027fc5761d9f1e63ed9806d01a3"].Matches), 2208; actual != expected {
 		t.Fatalf("Expected %d matches, got %d\n", expected, actual)
 	}
 	if nFileIDs, expected = len(fileIDs), 12056; nFileIDs != expected {

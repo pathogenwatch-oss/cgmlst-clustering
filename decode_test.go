@@ -3,8 +3,6 @@ package main
 import (
 	"os"
 	"testing"
-
-	"gopkg.in/mgo.v2/bson"
 )
 
 func TestCustomParse(t *testing.T) {
@@ -15,8 +13,8 @@ func TestCustomParse(t *testing.T) {
 	errc := make(chan error)
 	c := readBsonDocs(testFile, errc)
 	doc := <-c
-	var p ProfileDoc
-	if err := Unmarshal(doc, &p); err != nil {
+	p, err := Unmarshal(doc)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if p.FileID != "1b5be653a771dd81b5d9c290a6ac1c17f8999c97" {
@@ -39,8 +37,8 @@ func BenchmarkCustomParse(b *testing.B) {
 	errc := make(chan error)
 	c := readBsonDocs(testFile, errc)
 	doc := <-c
-	var p ProfileDoc
-	if err := Unmarshal(doc, &p); err != nil {
+	p, err := Unmarshal(doc)
+	if err != nil {
 		b.Fatal(err)
 	}
 	if p.FileID != "1b5be653a771dd81b5d9c290a6ac1c17f8999c97" {
@@ -51,8 +49,8 @@ func BenchmarkCustomParse(b *testing.B) {
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		var p1 ProfileDoc
-		if err := Unmarshal(doc, &p1); err != nil {
+		_, err := Unmarshal(doc)
+		if err != nil {
 			b.Fatal(err)
 		}
 	}

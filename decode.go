@@ -247,7 +247,8 @@ func unmarshalAnalysis(data []byte, d *ProfileDoc) error {
 	return iter.Err()
 }
 
-func Unmarshal(data []byte, d *ProfileDoc) error {
+func Unmarshal(data []byte) (*ProfileDoc, error) {
+	profile := ProfileDoc{}
 	iter := reader{bson: data[4 : len(data)-1]}
 	for iter.Next() {
 		_, ename, element := iter.Element()
@@ -257,16 +258,16 @@ func Unmarshal(data []byte, d *ProfileDoc) error {
 		case "_id":
 			var oid ObjectID
 			copy(oid[:], element)
-			d.ID = oid
+			profile.ID = oid
 		case "fileId":
-			d.FileID = string(trimlast(element))
+			profile.FileID = string(trimlast(element))
 		case "organismId":
-			d.OrganismID = string(trimlast(element))
+			profile.OrganismID = string(trimlast(element))
 		case "public":
-			d.Public = element[0] == 1
+			profile.Public = element[0] == 1
 		case "analysis":
-			unmarshalAnalysis(element, d)
+			unmarshalAnalysis(element, &profile)
 		}
 	}
-	return iter.Err()
+	return &profile, iter.Err()
 }
