@@ -1,161 +1,183 @@
 package main
 
 import (
-	"bytes"
+	"errors"
 	"io"
 
 	"gitlab.com/cgps/bsonkit"
 )
 
-type ObjectID [12]byte
-
-func trimlast(s []byte) []byte { return s[:len(s)-1] }
-
-func unmarshalMatch(data []byte) (string, interface{}) {
-	iter := reader{bson: data[4 : len(data)-1]}
-	m := Match{}
-	for iter.Next() {
-		typ, ename, element := iter.Element()
-		key := string(trimlast(ename))
-		switch key {
+func parseMatch(data []byte) (gene string, id interface{}, err error) {
+	var ok bool
+	elements := bsonkit.Parse(data)
+	for elements.Next() {
+		element := elements.Element()
+		switch element.Key() {
 		case "gene":
-			m.Gene = string(trimlast(element))
-		case "id":
-			switch typ {
-			case 0x02:
-				m.ID = string(trimlast(element))
-			case 0x10:
-				m.ID = int64(element[0]) | int64(element[1])<<8 | int64(element[2])<<16 | int64(element[3])<<24
-			case 0x12:
-				m.ID = int64(element[0]) | int64(element[1])<<8 | int64(element[2])<<16 | int64(element[3])<<24 | int64(element[4])<<32 | int64(element[5]<<40) | int64(element[6]<<48) | int64(element[7]<<56)
+			if gene, ok = element.Value().(string); !ok {
+				err = errors.New("Bad value for gene")
+				return
 			}
+		case "id":
+			id = element.Value()
 		}
 	}
-	return "", m
+	if elements.Err != nil {
+		err = elements.Err
+	}
+	return
 }
 
-func unmarshalMatches(data []byte, p *Profile) error {
-	iter := bsonkit.Reader(data)
-	for {
-		element, err := iter.Next()
-		if err == io.EOF {
-			break
-		}
+func parseMatches(data []byte, p *Profile) error {
+	elements := bsonkit.Parse(data)
+	for elements.Next() {
+		element := elements.Element()
+		gene, id, err := parseMatch(element.Bytes)
 		if err != nil {
-			panic(err)
+			return err
 		}
-		gene, id := unmarshalMatch(element.Bytes)
 		p.Matches[gene] = id
 	}
-	return iter.Err()
+	if elements.Err != nil {
+		return elements.Err
+	}
+	return nil
 }
 
-func unmarshalCgMlst(data []byte, p *Profile) error {
-	iter := bsonkit.Reader(data)
-	for {
-		element, err := iter.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			panic(err)
-		}
+func parseCgMlst(data []byte, p *Profile) (err error) {
+	var ok bool
+	elements := bsonkit.Parse(data)
+	for elements.Next() {
+		element := elements.Element()
 		switch element.Key() {
 		case "__v":
-			p.Version = element.Value()
+			if p.Version, ok = element.Value().(string); !ok {
+				err = errors.New("Bad value for __v")
+			}
 		case "matches":
-			unmarshalMatches(element.Bytes, p)
-		}
-	}
-	return iter.Err()
-}
-
-func unmarshalAnalysis(data []byte, p *Profile) error {
-	iter := bsonkit.Reader(data)
-	for {
-		element, err := iter.Next()
-		if err == io.EOF {
-			break
+			err = parseMatches(element.Bytes, p)
 		}
 		if err != nil {
-			panic(err)
+			return
 		}
+	}
+	if elements.Err != nil {
+		return elements.Err
+	}
+	if p.Version == "" {
+		return errors.New("version not found")
+	}
+	if len(p.Matches) == 0 {
+		return errors.New("No matches parsed")
+	}
+	return
+}
+
+func parseAnalysis(data []byte, p *Profile) (err error) {
+	elements := bsonkit.Parse(data)
+	for elements.Next() {
+		element := elements.Element()
 		switch element.Key() {
 		case "cgmlst":
-			unmarshalCgMlst(element, p)
+			err = parseCgMlst(element.Bytes, p)
+			return
 		}
 	}
-	return iter.Err()
+	if elements.Err != nil {
+		return elements.Err
+	}
+	return errors.New("Could not find cgmlst in analysis")
 }
 
-// func Unmarshal(data []byte, profile *ProfileDoc) error {
-// 	iter := reader{bson: data[4 : len(data)-1]}
-// 	for iter.Next() {
-// 		_, ename, element := iter.Element()
-// 		key := string(trimlast(ename))
-
-// 		switch key {
-// 		case "_id":
-// 			var oid ObjectID
-// 			copy(oid[:], element)
-// 			profile.ID = oid
-// 		case "fileId":
-// 			profile.FileID = string(trimlast(element))
-// 		case "organismId":
-// 			profile.OrganismID = string(trimlast(element))
-// 		case "public":
-// 			profile.Public = element[0] == 1
-// 		case "analysis":
-// 			unmarshalAnalysis(element, profile)
-// 		}
-// 	}
-// 	return iter.Err()
-// }
-
-func parseProfile(data []byte) Profile {
-	profile := Profile{}
-	iter := bsonkit.Reader(data)
-	for {
-		element, err := iter.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			panic(err)
-		}
+func parseProfile(data []byte) (profile Profile, err error) {
+	var ok bool
+	elements := bsonkit.Parse(data)
+	for elements.Next() {
+		element := elements.Element()
 		switch element.Key() {
 		case "_id":
-			profile.ID = element.Value()
+			if profile.ID, ok = element.Value().(ObjectID); !ok {
+				err = errors.New("Bad value for _id")
+			}
 		case "fileId":
-			profile.FileID = element.Value()
+			if profile.FileID, ok = element.Value().(string); !ok {
+				err = errors.New("Bad value for fileId")
+			}
 		case "organismId":
-			profile.OrganismID = element.Value()
+			if profile.OrganismID, ok = element.Value().(string); !ok {
+				err = errors.New("Bad value for organismId")
+			}
 		case "public":
-			profile.Public = element.Value()
+			if profile.Public, ok = element.Value().(bool); !ok {
+				err = errors.New("Bad value for public")
+			}
 		case "analysis":
-			unmarshalAnalysis(element.Bytes, profile)
+			err = parseAnalysis(element.Bytes, &profile)
+		}
+		if err != nil {
+			return
 		}
 	}
-	return profile
+	if elements.Err != nil {
+		err = elements.Err
+	}
+	return
 }
 
-func parseGenomes(data []byte) GenomesDoc {
+func parse(r io.Reader) (fileIDs []string, profiles map[string]Profile, scores scoresStore, err error) {
+	docs := bsonkit.GetDocuments(r)
+	docs.Next()
 
-}
+	if docs.Err != nil {
+		err = docs.Err
+		return
+	}
 
-func parse(r io.Reader) {
-	for iter := bsonkit.GetDocuments(r); iter.Next(); {
-		if bytes.Contains(iter.bytes, []byte("genomes")) {
-			genomes := parseGenomes(iter.bytes)
-			// do something with the genomes
-		}
-		if bytes.Contains(iter.bytes, []byte("cgmlst")) {
-			profile := parseProfile(iter.bytes)
-			// do something with the profile
-		}
-		if bytes.Contains(iter.bytes, []byte("scores")) {
-			scores := parseScores(iter.bytes)
-			// do something with the scores
+	firstDoc := bsonkit.Parse(docs.Bytes)
+	for firstDoc.Next() {
+		element := firstDoc.Element()
+		switch element.Key() {
+		case "genomes":
+			fileIds, err = parseGenomes(element.Bytes)
+			if err != nil {
+				return
+			}
+			break
 		}
 	}
+
+	if firstDoc.Err != nil {
+		err = firstDoc.Err
+		return
+	}
+
+	if len(fileIDs) == 0 {
+		err = errors.New("No fileIds found in first doc")
+		return
+	}
+
+	for docs.Next() {
+		doc := bsonkit.Parse(docs.Bytes)
+		for doc.Next() {
+			element := doc.Element()
+			switch element.Key() {
+			case "analysis":
+				_, err = parseProfile(element.Bytes)
+			case "scores":
+				_, err = parseScores(element.Bytes)
+			}
+			if err != nil {
+				return
+			}
+		}
+		if doc.Err != nil {
+			err = doc.Err
+			return
+		}
+	}
+	if docs.Err != nil {
+		err = docs.Err
+		return
+	}
+	return
 }
