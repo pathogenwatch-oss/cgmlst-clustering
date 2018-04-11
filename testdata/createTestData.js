@@ -49,7 +49,6 @@ const bson = new BSON();
 // reformat("all_staph.bson.bak")
 
 function dumpBson(p, data) {
-  // return
   f = fs.createWriteStream(p)
   for (let i =  0; i < data.length; i++) {
     f.write(
