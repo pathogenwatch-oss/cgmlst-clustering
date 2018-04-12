@@ -256,3 +256,83 @@ func TestNewScores(t *testing.T) {
 		}
 	}
 }
+
+func TestScoresOrder(t *testing.T) {
+	fileIDs := []string{"fileId1", "fileId2", "fileId3", "fileId4"}
+	scores := NewScores(fileIDs)
+	expected := []struct {
+		a, b string
+	}{
+		{"fileId2", "fileId1"},
+		{"fileId3", "fileId1"},
+		{"fileId3", "fileId2"},
+		{"fileId4", "fileId1"},
+		{"fileId4", "fileId2"},
+		{"fileId4", "fileId3"},
+	}
+
+	if len(scores.scores) != len(expected) {
+		t.Fatalf("Expected %d scores, got %d\n", len(expected), len(scores.scores))
+	}
+	for i, score := range scores.scores {
+		if score.fileA != expected[i].a || score.fileB != expected[i].b {
+			t.Fatalf("Failed at %d: %v, got %v\n", i, expected[i], score)
+		}
+	}
+}
+
+func TestGetIndex(t *testing.T) {
+	fileIDs := []string{"fileId1", "fileId2", "fileId3", "fileId4"}
+	scores := NewScores(fileIDs)
+	testCases := []struct {
+		a, b string
+	}{
+		{"fileId2", "fileId1"},
+		{"fileId3", "fileId1"},
+		{"fileId3", "fileId2"},
+		{"fileId4", "fileId1"},
+		{"fileId4", "fileId2"},
+		{"fileId4", "fileId3"},
+	}
+
+	for i, tc := range testCases {
+		if v, err := scores.getIndex(tc.a, tc.b); err != nil {
+			t.Fatal(err)
+		} else if i != v {
+			t.Fatalf("Expected %d, got %d\n", i, v)
+		}
+		if v, err := scores.getIndex(tc.b, tc.a); err != nil {
+			t.Fatal(err)
+		} else if i != v {
+			t.Fatalf("Expected %d, got %d\n", i, v)
+		}
+	}
+}
+
+func TestGetScore(t *testing.T) {
+	fileIDs := []string{"fileId1", "fileId2", "fileId3", "fileId4"}
+	scores := NewScores(fileIDs)
+	testCases := []struct {
+		a, b string
+	}{
+		{"fileId2", "fileId1"},
+		{"fileId3", "fileId1"},
+		{"fileId3", "fileId2"},
+		{"fileId4", "fileId1"},
+		{"fileId4", "fileId2"},
+		{"fileId4", "fileId3"},
+	}
+
+	for _, tc := range testCases {
+		if v, err := scores.Get(tc.a, tc.b); err != nil {
+			t.Fatal(err)
+		} else if v.fileA != tc.a || v.fileB != tc.b {
+			t.Fatalf("Expected %v, got %v\n", tc, v)
+		}
+		if v, err := scores.Get(tc.b, tc.a); err != nil {
+			t.Fatal(err)
+		} else if v.fileA != tc.a || v.fileB != tc.b {
+			t.Fatalf("Expected %v, got %v\n", tc, v)
+		}
+	}
+}

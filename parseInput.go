@@ -142,7 +142,7 @@ func NewScores(fileIDs []string) (s scoresStore) {
 	}
 	idx := 0
 	for i, fileA := range fileIDs {
-		for _, fileB := range fileIDs[i+1:] {
+		for _, fileB := range fileIDs[:i] {
 			s.scores[idx] = scoreDetails{fileA, fileB, 0, PENDING}
 			idx++
 		}
@@ -166,7 +166,7 @@ func (s scoresStore) getIndex(fileA string, fileB string) (int, error) {
 		minIdx = idxB
 		maxIdx = idxA
 	}
-	scoreIdx := (maxIdx * (maxIdx - 1) / 2) + minIdx
+	scoreIdx := ((maxIdx * (maxIdx - 1)) / 2) + minIdx
 	return scoreIdx, nil
 }
 
