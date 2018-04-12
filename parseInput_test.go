@@ -92,7 +92,7 @@ func TestUpdateScores(t *testing.T) {
 
 	scores := NewScores([]string{"abc", "bcd", "cde", "xyz"})
 	scores.Set(scoreDetails{"bcd", "abc", 7, PENDING})
-	scores.Set(scoreDetails{"xyz", "abc", 5, QUEUED})
+	scores.Set(scoreDetails{"xyz", "abc", 5, COMPLETE})
 	if err := updateScores(scores, doc); err != nil {
 		t.Fatal(err)
 	}
@@ -107,8 +107,8 @@ func TestUpdateScores(t *testing.T) {
 		{"bcd", "abc", 1, COMPLETE},
 		{"abc", "cde", 2, COMPLETE},
 		{"cde", "abc", 2, COMPLETE},
-		{"abc", "xyz", 5, QUEUED},
-		{"xyz", "abc", 5, QUEUED},
+		{"abc", "xyz", 5, COMPLETE},
+		{"xyz", "abc", 5, COMPLETE},
 	}
 
 	for _, tc := range testCases {
@@ -168,46 +168,6 @@ func TestParseProfile(t *testing.T) {
 	}
 }
 
-func TestCheckProfiles(t *testing.T) {
-	scores := NewScores([]string{"abc", "def"})
-	profilesStore := NewProfileStore(&scores)
-
-	scores.Set(scoreDetails{"abc", "def", 0, COMPLETE})
-	if err := checkProfiles(profilesStore, scores); err != nil {
-		t.Fatal("Should be OK")
-	}
-
-	profilesStore.Add(Profile{
-		bsonkit.ObjectID{},
-		"1280",
-		"abc",
-		true,
-		"v0",
-		make(map[string]interface{}),
-	})
-
-	if err := checkProfiles(profilesStore, scores); err != nil {
-		t.Fatal("Should be OK")
-	}
-
-	scores.Set(scoreDetails{"abc", "def", 0, PENDING})
-	if err := checkProfiles(profilesStore, scores); err == nil {
-		t.Fatal("Should has failed")
-	}
-
-	profilesStore.Add(Profile{
-		bsonkit.ObjectID{},
-		"1280",
-		"def",
-		true,
-		"v0",
-		make(map[string]interface{}),
-	})
-	if err := checkProfiles(profilesStore, scores); err != nil {
-		t.Fatal("Should be OK")
-	}
-}
-
 func TestParse(t *testing.T) {
 	testFile, err := os.Open("testdata/TestParse.bson")
 	if err != nil {
@@ -220,8 +180,8 @@ func TestParse(t *testing.T) {
 	if len(fileIDs) != 4 {
 		t.Fatal("Expected 4 fileIds")
 	}
-	if len(profiles) != 2 {
-		t.Fatalf("Expected 2 profiles, got %d\n", len(profiles))
+	if len(profiles.profiles) != 2 {
+		t.Fatalf("Expected 2 profiles, got %d\n", len(profiles.profiles))
 	}
 	if len(scores.scores) != 6 {
 		t.Fatal("Expected 6 scores")
@@ -238,13 +198,17 @@ func TestAllParse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if actual, expected := len(profiles["cdc283e48ee0f027fc5761d9f1e63ed9806d01a3"].Matches), 2199; actual != expected {
+	p, err := profiles.Get("cdc283e48ee0f027fc5761d9f1e63ed9806d01a3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if actual, expected := len(p.Matches), 2199; actual != expected {
 		t.Fatalf("Expected %d matches, got %d\n", expected, actual)
 	}
 	if nFileIDs, expected = len(fileIDs), 12056; nFileIDs != expected {
 		t.Fatalf("Expected %d fileIds, got %d\n", expected, nFileIDs)
 	}
-	if actual, expected := len(profiles), nFileIDs; actual != expected {
+	if actual, expected := len(profiles.profiles), nFileIDs; actual != expected {
 		t.Fatalf("Expected %d profiles, got %d\n", expected, actual)
 	}
 	if actual, expected := len(scores.scores), nFileIDs*(nFileIDs-1)/2; actual != expected {

@@ -2,15 +2,16 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"testing"
+
+	"gitlab.com/cgps/bsonkit"
 )
 
 func TestIndexer(t *testing.T) {
 	indexer := NewIndexer()
 	indexer.Index(Profile{
-		ID:         "a",
+		ID:         bsonkit.ObjectID{byte(0)},
 		OrganismID: "1280",
 		FileID:     "abc123",
 		Public:     false,
@@ -27,7 +28,7 @@ func TestIndexer(t *testing.T) {
 	}
 
 	indexer.Index(Profile{
-		ID:         "b",
+		ID:         bsonkit.ObjectID{byte(1)},
 		OrganismID: "1280",
 		FileID:     "bcd234",
 		Public:     false,
@@ -50,7 +51,7 @@ func TestIndexer(t *testing.T) {
 func TestComparer(t *testing.T) {
 	profiles := [...]Profile{
 		Profile{
-			ID:         "a",
+			ID:         bsonkit.ObjectID{byte(0)},
 			OrganismID: "1280",
 			FileID:     "abc123",
 			Public:     false,
@@ -62,7 +63,7 @@ func TestComparer(t *testing.T) {
 			},
 		},
 		Profile{
-			ID:         "b",
+			ID:         bsonkit.ObjectID{byte(1)},
 			OrganismID: "1280",
 			FileID:     "bcd234",
 			Public:     false,
@@ -74,7 +75,7 @@ func TestComparer(t *testing.T) {
 			},
 		},
 		Profile{
-			ID:         "c",
+			ID:         bsonkit.ObjectID{byte(2)},
 			OrganismID: "1280",
 			FileID:     "cde345",
 			Public:     false,
@@ -119,9 +120,9 @@ func TestComparer(t *testing.T) {
 }
 
 func TestScoreAll(t *testing.T) {
-	profiles := [...]Profile{
+	testProfiles := [...]Profile{
 		Profile{
-			ID:         "a",
+			ID:         bsonkit.ObjectID{byte(0)},
 			OrganismID: "1280",
 			FileID:     "abc123",
 			Public:     false,
@@ -133,7 +134,7 @@ func TestScoreAll(t *testing.T) {
 			},
 		},
 		Profile{
-			ID:         "b",
+			ID:         bsonkit.ObjectID{byte(1)},
 			OrganismID: "1280",
 			FileID:     "bcd234",
 			Public:     false,
@@ -145,7 +146,7 @@ func TestScoreAll(t *testing.T) {
 			},
 		},
 		Profile{
-			ID:         "c",
+			ID:         bsonkit.ObjectID{byte(2)},
 			OrganismID: "1280",
 			FileID:     "cde345",
 			Public:     false,
@@ -158,29 +159,29 @@ func TestScoreAll(t *testing.T) {
 			},
 		},
 	}
-	profilesChan := make(chan Profile)
-	fileIdsChan := make(chan string)
-	go func() {
-		for _, p := range profiles {
-			profilesChan <- p
-			fileIdsChan <- p.FileID
-		}
-		close(profilesChan)
-		close(fileIdsChan)
-	}()
 
-	result := scoreAll(profilesChan, fileIdsChan)
-	nFileIds := len(result.FileIDs)
-	if nFileIds != len(profiles) {
+	fileIDs := []string{"abc123", "bcd234", "cde345"}
+	scores := NewScores(fileIDs)
+	profiles := NewProfileStore(&scores)
+	for _, p := range testProfiles {
+		profiles.Add(p)
+	}
+
+	if err := scoreAll(scores, profiles); err != nil {
+		t.Fatal(err)
+	}
+
+	nFileIds := len(scores.fileIDs)
+	if nFileIds != len(testProfiles) {
 		t.Fatal("Not enough fileIds")
 	}
-	if len(result.Scores) != nFileIds*(nFileIds-1)/2 {
+	if len(scores.scores) != nFileIds*(nFileIds-1)/2 {
 		t.Fatal("Not enough scores")
 	}
 	expectedScores := []int{2, 1, 1}
 	for i, score := range expectedScores {
-		if score != result.Scores[i] {
-			t.Fatalf("Score %d was %d should be %d\n", i, result.Scores[i], score)
+		if score != scores.scores[i].value {
+			t.Fatalf("Score %d was %v should be %d\n", i, scores.scores[i], score)
 		}
 	}
 }
@@ -204,26 +205,27 @@ func TestTokeniser(t *testing.T) {
 	}
 }
 
-func BenchmarkScoreAll(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		profiles := make(chan Profile)
-		fileIDsChan := make(chan string)
+func TestScoreAllStaph(t *testing.T) {
+	testFile, err := os.Open("testdata/all_staph.bson")
+	if err != nil {
+		t.Fatal("Couldn't load test data")
+	}
 
-		profilesFile, err := os.Open("all_staph.bson")
-		if err != nil {
-			b.Fatal("Couldn't open test file")
-		}
-		r := (io.Reader)(profilesFile)
-		parseProfiles(&r, profiles, fileIDsChan)
+	_, profiles, scores, err := parse(testFile)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-		scores := scoreAll(profiles, fileIDsChan)
-		nFileIds := len(scores.FileIDs)
-		nScores := len(scores.Scores)
-		if nFileIds < 2 {
-			b.Fatal("Expected some fileIds")
-		}
-		if nScores != nFileIds*(nFileIds-1)/2 {
-			b.Fatal("Expected some fileIds")
-		}
+	if err := scoreAll(scores, profiles); err != nil {
+		t.Fatal(err)
+	}
+
+	nFileIds := len(scores.fileIDs)
+	nScores := len(scores.scores)
+	if nFileIds != 12056 {
+		t.Fatal("Expected some fileIds")
+	}
+	if nScores != nFileIds*(nFileIds-1)/2 {
+		t.Fatal("Expected some scores")
 	}
 }

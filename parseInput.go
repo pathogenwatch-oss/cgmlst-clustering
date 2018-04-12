@@ -12,7 +12,6 @@ import (
 
 const (
 	PENDING  int = iota
-	QUEUED   int = iota
 	COMPLETE int = iota
 )
 
@@ -186,23 +185,6 @@ func (s scoresStore) Get(fileA string, fileB string) (scoreDetails, error) {
 		return scoreDetails{}, err
 	}
 	return s.scores[idx], nil
-}
-
-func checkProfiles(profiles ProfileStore, scores scoresStore) error {
-	idx := 0
-	for i := 1; i < len(scores.fileIDs); i++ {
-		for j := 0; j < i; j++ {
-			if scores.scores[idx].status == PENDING {
-				if !profiles.seen[i] {
-					return fmt.Errorf("expected profile for %s", scores.fileIDs[i])
-				} else if !profiles.seen[j] {
-					return fmt.Errorf("expected profile for %s", scores.fileIDs[j])
-				}
-			}
-			idx++
-		}
-	}
-	return nil
 }
 
 func parseGenomeDoc(doc *bsonkit.Document) (fileIDs []string, err error) {
@@ -394,7 +376,7 @@ func parseProfile(doc *bsonkit.Document) (profile Profile, err error) {
 	return
 }
 
-func parse(r io.Reader) (fileIDs []string, profiles map[string]Profile, scores scoresStore, err error) {
+func parse(r io.Reader) (fileIDs []string, profiles ProfileStore, scores scoresStore, err error) {
 	err = nil
 	errChan := make(chan error)
 	numWorkers := 5
@@ -412,14 +394,14 @@ func parse(r io.Reader) (fileIDs []string, profiles map[string]Profile, scores s
 		}
 	}()
 
-	firstDoc := new(bsonkit.Document)
+	var firstDoc *bsonkit.Document
 	select {
 	case err = <-errChan:
 		if err != nil {
 			return
 		}
-	case firstDoc = <-docChan:
-		break
+	case d := <-docChan:
+		firstDoc = d
 	}
 
 	for firstDoc.Next() {
@@ -445,8 +427,7 @@ func parse(r io.Reader) (fileIDs []string, profiles map[string]Profile, scores s
 	log.Printf("Found %d fileIds\n", len(fileIDs))
 
 	scores = NewScores(fileIDs)
-	profilesStore := NewProfileStore(&scores)
-	profiles = make(map[string]Profile)
+	profiles = NewProfileStore(&scores)
 
 	worker := func(workerID int) {
 		nDocs := 0
@@ -467,7 +448,7 @@ func parse(r io.Reader) (fileIDs []string, profiles map[string]Profile, scores s
 					}
 					break
 				case "analysis":
-					if err := updateProfiles(profilesStore, doc); err != nil {
+					if err := updateProfiles(profiles, doc); err != nil {
 						errChan <- err
 						return
 					}
@@ -504,15 +485,6 @@ func parse(r io.Reader) (fileIDs []string, profiles map[string]Profile, scores s
 		}
 	case <-done:
 		log.Println("Workers have all finished")
-		err = checkProfiles(profilesStore, scores)
-	}
-
-	if err == nil {
-		for _, p := range profilesStore.profiles {
-			if p.FileID != "" {
-				profiles[p.FileID] = p
-			}
-		}
 	}
 
 	return
