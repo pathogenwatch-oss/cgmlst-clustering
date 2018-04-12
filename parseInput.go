@@ -1,15 +1,13 @@
 package main
 
 import (
-	"bytes"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 	"sync"
 
-	"gopkg.in/mgo.v2/bson"
+	"gitlab.com/cgps/bsonkit"
 )
 
 const (
@@ -21,66 +19,50 @@ const (
 type M = map[string]interface{}
 type L = []interface{}
 
-type GenomesDoc struct {
-	Genomes []struct {
-		FileID string `bson:"fileId"`
-	} `bson:"genomes"`
-}
+func updateScores(scores scoresStore, s *bsonkit.Document) error {
+	var (
+		fileA, fileB string
+		score        int32
+	)
 
-type Match struct {
-	Gene string
-	ID   interface{}
-}
+	scoresDoc := new(bsonkit.Document)
 
-type ProfileDoc struct {
-	ID         ObjectID `bson:"_id"`
-	OrganismID string   `bson:"organismId"`
-	FileID     string   `bson:"fileId"`
-	Public     bool     `bson:"public"`
-	Analysis   struct {
-		CgMlst struct {
-			Version string  `bson:"__v"`
-			Matches []Match `bson:"matches"`
-		} `bson:"cgmlst"`
-	} `bson:"analysis"`
-}
-
-type ScoreDoc struct {
-	FileID string           `bson:"fileId"`
-	Scores map[string]int32 `bson:"scores"`
-}
-
-func parseGenomeDoc(doc GenomesDoc) (fileIDs []string, err error) {
-	fileIDs = make([]string, 0)
-	seen := make(map[string]bool)
-
-	for _, g := range doc.Genomes {
-		if _, isSeen := seen[g.FileID]; isSeen {
-			continue
-		}
-		fileIDs = append(fileIDs, g.FileID)
-		seen[g.FileID] = true
-	}
-	return
-}
-
-func updateScores(scores scoresStore, doc ScoreDoc) error {
-	if doc.FileID == "" {
-		return errors.New("Profile doc had an invalid fileId")
-	}
-
-	fileA := doc.FileID
-	for fileB, value := range doc.Scores {
-		err := scores.Set(scoreDetails{fileA, fileB, int(value), COMPLETE})
-		if err != nil {
-			return err
+	s.Seek(0)
+	for s.Next() {
+		switch string(s.Key()) {
+		case "fileId":
+			if err := s.Value(&fileA); err != nil {
+				return errors.New("Couldn't parse fileId")
+			}
+		case "scores":
+			if err := s.Value(scoresDoc); err != nil {
+				return errors.New("Couldn't parse scores")
+			}
 		}
 	}
+	if s.Err != nil {
+		return s.Err
+	}
+	if fileA == "" {
+		return errors.New("Couldn't find a fileId")
+	}
+
+	for scoresDoc.Next() {
+		fileB = string(scoresDoc.Key())
+		if err := scoresDoc.Value(&score); err != nil {
+			return errors.New("Couldn't parse score")
+		}
+		scores.Set(scoreDetails{fileA, fileB, int(score), COMPLETE})
+	}
+	if scoresDoc.Err != nil {
+		return scoresDoc.Err
+	}
+
 	return nil
 }
 
 type Profile struct {
-	ID         ObjectID
+	ID         bsonkit.ObjectID
 	OrganismID string
 	FileID     string
 	Public     bool
@@ -101,14 +83,10 @@ func NewProfileStore(scores *scoresStore) (profiles ProfileStore) {
 	return
 }
 
-func updateProfiles(profiles ProfileStore, doc ProfileDoc) error {
-	if doc.FileID == "" {
-		return errors.New("Profile doc had an invalid fileId")
-	}
-
-	idx, known := profiles.lookup[doc.FileID]
+func (profiles *ProfileStore) Add(p Profile) error {
+	idx, known := profiles.lookup[p.FileID]
 	if !known {
-		return fmt.Errorf("unknown fileId %s", doc.FileID)
+		return fmt.Errorf("unknown fileId %s", p.FileID)
 	}
 
 	if profiles.seen[idx] {
@@ -116,22 +94,33 @@ func updateProfiles(profiles ProfileStore, doc ProfileDoc) error {
 		return nil
 	}
 
-	var p Profile
-	p.FileID = doc.FileID
-	p.ID = doc.ID
-	p.OrganismID = doc.OrganismID
-	p.Public = doc.Public
-	p.Version = doc.Analysis.CgMlst.Version
-	p.Matches = make(M)
-	// log.Printf("Number of parsed matches: %d", len(doc.Analysis.CgMlst.Matches))
-	for _, m := range doc.Analysis.CgMlst.Matches {
-		p.Matches[m.Gene] = m.ID
-	}
-	// log.Printf("Number of accumulated matches: %d", len(p.Matches))
-
 	profiles.profiles[idx] = p
 	profiles.seen[idx] = true
 	return nil
+}
+
+func (profiles *ProfileStore) Get(fileID string) (Profile, error) {
+	idx, known := profiles.lookup[fileID]
+	if !known {
+		return Profile{}, fmt.Errorf("unknown fileId %s", fileID)
+	}
+	if seen := profiles.seen[idx]; !seen {
+		return Profile{}, fmt.Errorf("unknown fileId %s", fileID)
+	}
+	return profiles.profiles[idx], nil
+}
+
+func updateProfiles(profiles ProfileStore, doc *bsonkit.Document) error {
+	p, err := parseProfile(doc)
+	if err != nil {
+		return err
+	}
+
+	if p.FileID == "" {
+		return errors.New("Profile doc had an invalid fileId")
+	}
+
+	return profiles.Add(p)
 }
 
 type scoreDetails struct {
@@ -216,116 +205,289 @@ func checkProfiles(profiles ProfileStore, scores scoresStore) error {
 	return nil
 }
 
-func readBsonDocs(r io.Reader, errChan chan error) chan []byte {
-	docs := make(chan []byte, 50)
+func parseGenomeDoc(doc *bsonkit.Document) (fileIDs []string, err error) {
+	fileIDs = make([]string, 0)
+	seen := make(map[string]bool)
+	var (
+		fileID string
+	)
 
-	go func() {
-		defer close(docs)
-		// for nDocs := 0; nDocs < 5000; nDocs++ {
-		for {
-			// Loop based on https://github.com/pkg/bson/blob/af6d2c694850d177d255eef9610935cb2e5e6a7b/bson.go#L59
-			// by [Dave Cheney](https://github.com/davecheney)
-			// Copyright (c) 2014, David Cheney <dave@cheney.net>
-			// BSD 2-Clause "Simplified" License
-			var header [4]byte
-			n, err := io.ReadFull(r, header[:])
-			if err == io.EOF {
-				return
-			} else if err != nil {
-				log.Println(err)
-				errChan <- err
-				return
-			}
-			if n < 4 {
-				log.Println("bson document too short")
-				errChan <- errors.New("bson document too short")
-				return
-			}
-			doclen := int64(binary.LittleEndian.Uint32(header[:])) - 4
-			r := io.LimitReader(r, doclen)
-			buf := bytes.NewBuffer(header[:])
-			nn, err := io.Copy(buf, r)
-			if err != nil {
-				log.Println(err)
-				errChan <- err
-				return
-			}
-			if nn != int64(doclen) {
-				log.Println(err)
-				errChan <- io.ErrUnexpectedEOF
-				return
-			}
-			docs <- buf.Bytes()
+	d := new(bsonkit.Document)
+	genomes := new(bsonkit.Document)
+
+	doc.Seek(0)
+	for doc.Next() {
+		if string(doc.Key()) == "genomes" {
+			err = doc.Value(genomes)
+			break
 		}
-	}()
+	}
+	if doc.Err != nil {
+		err = doc.Err
+		return
+	} else if err != nil {
+		return
+	} else if string(doc.Key()) != "genomes" {
+		err = errors.New("Not a genomes document")
+		return
+	}
 
-	return docs
+	for genomes.Next() {
+		if err = genomes.Value(d); err != nil {
+			return
+		}
+		fileID = ""
+		for d.Next() {
+			if string(d.Key()) != "fileId" {
+				continue
+			}
+			if err = d.Value(&fileID); err != nil {
+				return
+			}
+			if _, duplicate := seen[fileID]; !duplicate {
+				fileIDs = append(fileIDs, fileID)
+				seen[fileID] = true
+			}
+			break
+		}
+		if d.Err != nil {
+			err = d.Err
+			return
+		} else if fileID == "" {
+			err = errors.New("Document didn't contain a fileId")
+			return
+		}
+	}
+
+	if genomes.Err != nil {
+		err = genomes.Err
+	}
+	return
+}
+
+func parseMatch(matchDoc *bsonkit.Document) (gene string, id interface{}, err error) {
+	for matchDoc.Next() {
+		switch string(matchDoc.Key()) {
+		case "gene":
+			if err = matchDoc.Value(&gene); err != nil {
+				err = errors.New("Bad value for gene")
+				return
+			}
+		case "id":
+			if err = matchDoc.Value(&id); err != nil {
+				err = errors.New("Bad value for allele id")
+				return
+			}
+		}
+	}
+	if matchDoc.Err != nil {
+		err = matchDoc.Err
+	}
+	return
+}
+
+func parseMatches(matchesDoc *bsonkit.Document, p *Profile) error {
+	p.Matches = make(M)
+	match := new(bsonkit.Document)
+
+	for matchesDoc.Next() {
+		if err := matchesDoc.Value(match); err != nil {
+			return errors.New("Couldn't get match")
+		}
+		gene, id, err := parseMatch(match)
+		if err != nil {
+			return err
+		}
+		p.Matches[gene] = id
+	}
+	if matchesDoc.Err != nil {
+		return matchesDoc.Err
+	}
+	return nil
+}
+
+func parseCgMlst(cgmlstDoc *bsonkit.Document, p *Profile) (err error) {
+	matches := new(bsonkit.Document)
+	for cgmlstDoc.Next() {
+		switch string(cgmlstDoc.Key()) {
+		case "__v":
+			if err = cgmlstDoc.Value(&p.Version); err != nil {
+				return errors.New("Bad value for __v")
+			}
+		case "matches":
+			if err = cgmlstDoc.Value(matches); err != nil {
+				return errors.New("Bad value for matches")
+			}
+			if err = parseMatches(matches, p); err != nil {
+				return errors.New("Bad value for matches")
+			}
+		}
+		if err != nil {
+			return
+		}
+	}
+	if cgmlstDoc.Err != nil {
+		return cgmlstDoc.Err
+	}
+	if p.Version == "" {
+		return errors.New("version not found")
+	}
+	if len(p.Matches) == 0 {
+		return errors.New("No matches parsed")
+	}
+	return
+}
+
+func parseAnalysis(analysisDoc *bsonkit.Document, p *Profile) (err error) {
+	cgmlstDoc := new(bsonkit.Document)
+	for analysisDoc.Next() {
+		switch string(analysisDoc.Key()) {
+		case "cgmlst":
+			if err = analysisDoc.Value(cgmlstDoc); err != nil {
+				return
+			}
+			err = parseCgMlst(cgmlstDoc, p)
+			return
+		}
+	}
+	if analysisDoc.Err != nil {
+		return analysisDoc.Err
+	}
+	return errors.New("Could not find cgmlst in analysis")
+}
+
+func parseProfile(doc *bsonkit.Document) (profile Profile, err error) {
+	analysisDoc := new(bsonkit.Document)
+	doc.Seek(0)
+	for doc.Next() {
+		switch string(doc.Key()) {
+		case "_id":
+			if err = doc.Value(&profile.ID); err != nil {
+				err = errors.New("Bad value for _id")
+			}
+		case "fileId":
+			if err = doc.Value(&profile.FileID); err != nil {
+				err = errors.New("Bad value for fileId")
+			}
+		case "organismId":
+			if err = doc.Value(&profile.OrganismID); err != nil {
+				err = errors.New("Bad value for organismId")
+			}
+		case "public":
+			if err = doc.Value(&profile.Public); err != nil {
+				err = errors.New("Bad value for public")
+			}
+		case "analysis":
+			if err = doc.Value(analysisDoc); err != nil {
+				err = errors.New("Bad value for analysis")
+			} else {
+				err = parseAnalysis(analysisDoc, &profile)
+			}
+		}
+		if err != nil {
+			return
+		}
+	}
+	if doc.Err != nil {
+		err = doc.Err
+	}
+	return
 }
 
 func parse(r io.Reader) (fileIDs []string, profiles map[string]Profile, scores scoresStore, err error) {
 	err = nil
 	errChan := make(chan error)
-	docs := readBsonDocs(r, errChan)
 	numWorkers := 5
 	var wg sync.WaitGroup
 
-	firstDoc := <-docs
-	var genomes GenomesDoc
-	if parseErr := bson.Unmarshal(firstDoc, &genomes); parseErr != nil {
-		err = errors.New("Could not get list of genomes from first document")
+	docIter := bsonkit.GetDocuments(r)
+	docChan := make(chan *bsonkit.Document, 50)
+	go func() {
+		defer close(docChan)
+		for docIter.Next() {
+			docChan <- docIter.Doc
+		}
+		if docIter.Err != nil {
+			errChan <- docIter.Err
+		}
+	}()
+
+	firstDoc := new(bsonkit.Document)
+	select {
+	case err = <-errChan:
+		if err != nil {
+			return
+		}
+	case firstDoc = <-docChan:
+		break
+	}
+
+	for firstDoc.Next() {
+		switch string(firstDoc.Key()) {
+		case "genomes":
+			fileIDs, err = parseGenomeDoc(firstDoc)
+			if err != nil {
+				return
+			}
+			break
+		}
+	}
+	if firstDoc.Err != nil {
+		err = firstDoc.Err
 		return
 	}
-	if fileIDs, err = parseGenomeDoc(genomes); err != nil {
+
+	if len(fileIDs) == 0 {
+		err = errors.New("No fileIds found in first doc")
 		return
 	}
-	log.Printf("Found %d unique fileIds\n", len(fileIDs))
+
+	log.Printf("Found %d fileIds\n", len(fileIDs))
 
 	scores = NewScores(fileIDs)
 	profilesStore := NewProfileStore(&scores)
 	profiles = make(map[string]Profile)
 
-	for worker := 0; worker < numWorkers; worker++ {
-		wg.Add(1)
-		go func(worker int) {
-			defer wg.Done()
-			var (
-				doc  []byte
-				more bool
-			)
-			for nDocs := 1; ; nDocs++ {
-				if doc, more = <-docs; !more {
-					log.Printf("Worker %d is done after %d documents\n", worker, nDocs)
-					return
-				}
-				if bytes.Contains(doc, []byte("cgmlst")) {
-					p, err := makeProfile(doc)
-					if err != nil {
+	worker := func(workerID int) {
+		nDocs := 0
+		defer wg.Done()
+		defer func() {
+			log.Printf("Worker %d finished parsing %d docs\n", workerID, nDocs)
+		}()
+
+		log.Printf("Worker %d started\n", workerID)
+
+		for doc := range docChan {
+			for doc.Next() {
+				switch string(doc.Key()) {
+				case "scores":
+					if err := updateScores(scores, doc); err != nil {
 						errChan <- err
 						return
 					}
-					if err := updateProfiles(profilesStore, *p); err != nil {
+					break
+				case "analysis":
+					if err := updateProfiles(profilesStore, doc); err != nil {
 						errChan <- err
 						return
 					}
-				} else if bytes.Contains(doc, []byte("scores")) {
-					var s ScoreDoc
-					if err := bson.Unmarshal(doc, &s); err != nil {
-						errChan <- err
-						return
-					}
-					if err := updateScores(scores, s); err != nil {
-						errChan <- err
-						return
-					}
-				} else {
-					errChan <- fmt.Errorf("unknown document type found by worker %d", worker)
-					return
-				}
-				if nDocs%100 == 0 {
-					log.Printf("Worker %d parsed %d docs", worker, nDocs)
+					break
 				}
 			}
-		}(worker)
+			if doc.Err != nil {
+				errChan <- doc.Err
+				return
+			}
+			nDocs++
+			if nDocs%100 == 0 {
+				log.Printf("Worker %d parsed %d docs\n", workerID, nDocs)
+			}
+		}
+	}
+
+	for workerID := 0; workerID < numWorkers; workerID++ {
+		wg.Add(1)
+		go worker(workerID)
 	}
 
 	done := make(chan bool)
@@ -347,7 +509,9 @@ func parse(r io.Reader) (fileIDs []string, profiles map[string]Profile, scores s
 
 	if err == nil {
 		for _, p := range profilesStore.profiles {
-			profiles[p.FileID] = p
+			if p.FileID != "" {
+				profiles[p.FileID] = p
+			}
 		}
 	}
 
