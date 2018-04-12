@@ -22,9 +22,10 @@ type L = []interface{}
 func updateScores(scores scoresStore, s *bsonkit.Document) error {
 	var (
 		fileA, fileB string
-		scoresDoc    *bsonkit.Document
 		score        int32
 	)
+
+	scoresDoc := new(bsonkit.Document)
 
 	s.Seek(0)
 	for s.Next() {
@@ -208,21 +209,26 @@ func parseGenomeDoc(doc *bsonkit.Document) (fileIDs []string, err error) {
 	fileIDs = make([]string, 0)
 	seen := make(map[string]bool)
 	var (
-		fileID     string
-		d, genomes *bsonkit.Document
+		fileID string
 	)
+
+	d := new(bsonkit.Document)
+	genomes := new(bsonkit.Document)
 
 	doc.Seek(0)
 	for doc.Next() {
 		if string(doc.Key()) == "genomes" {
 			err = doc.Value(genomes)
+			break
 		}
-		continue
 	}
 	if doc.Err != nil {
 		err = doc.Err
 		return
 	} else if err != nil {
+		return
+	} else if string(doc.Key()) != "genomes" {
+		err = errors.New("Not a genomes document")
 		return
 	}
 
@@ -282,10 +288,10 @@ func parseMatch(matchDoc *bsonkit.Document) (gene string, id interface{}, err er
 
 func parseMatches(matchesDoc *bsonkit.Document, p *Profile) error {
 	p.Matches = make(M)
-	var match *bsonkit.Document
+	match := new(bsonkit.Document)
 
 	for matchesDoc.Next() {
-		if err := matchesDoc.Value(&match); err != nil {
+		if err := matchesDoc.Value(match); err != nil {
 			return errors.New("Couldn't get match")
 		}
 		gene, id, err := parseMatch(match)
@@ -301,7 +307,7 @@ func parseMatches(matchesDoc *bsonkit.Document, p *Profile) error {
 }
 
 func parseCgMlst(cgmlstDoc *bsonkit.Document, p *Profile) (err error) {
-	var matches *bsonkit.Document
+	matches := new(bsonkit.Document)
 	for cgmlstDoc.Next() {
 		switch string(cgmlstDoc.Key()) {
 		case "__v":
@@ -333,11 +339,11 @@ func parseCgMlst(cgmlstDoc *bsonkit.Document, p *Profile) (err error) {
 }
 
 func parseAnalysis(analysisDoc *bsonkit.Document, p *Profile) (err error) {
-	var cgmlstDoc *bsonkit.Document
+	cgmlstDoc := new(bsonkit.Document)
 	for analysisDoc.Next() {
 		switch string(analysisDoc.Key()) {
 		case "cgmlst":
-			if err = analysisDoc.Value(&cgmlstDoc); err != nil {
+			if err = analysisDoc.Value(cgmlstDoc); err != nil {
 				return
 			}
 			err = parseCgMlst(cgmlstDoc, p)
@@ -351,7 +357,7 @@ func parseAnalysis(analysisDoc *bsonkit.Document, p *Profile) (err error) {
 }
 
 func parseProfile(doc *bsonkit.Document) (profile Profile, err error) {
-	var analysisDoc *bsonkit.Document
+	analysisDoc := new(bsonkit.Document)
 	doc.Seek(0)
 	for doc.Next() {
 		switch string(doc.Key()) {
@@ -406,7 +412,7 @@ func parse(r io.Reader) (fileIDs []string, profiles map[string]Profile, scores s
 		}
 	}()
 
-	var firstDoc *bsonkit.Document
+	firstDoc := new(bsonkit.Document)
 	select {
 	case err = <-errChan:
 		if err != nil {
