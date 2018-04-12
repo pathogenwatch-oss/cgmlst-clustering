@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"sync"
 )
 
@@ -113,7 +114,11 @@ func (c *Comparer) compare(fileIDA string, fileIDB string) int {
 	return geneCount - alleleCount
 }
 
-func scoreProfiles(jobs chan int, scores *scoresStore, comparer Comparer, wg *sync.WaitGroup) {
+func scoreProfiles(workerID int, jobs chan int, scores *scoresStore, comparer Comparer, wg *sync.WaitGroup) {
+	nScores := 0
+	defer func() {
+		log.Printf("Worker %d has computed %d scores", workerID, nScores)
+	}()
 	defer wg.Done()
 	for {
 		j, more := <-jobs
@@ -123,10 +128,18 @@ func scoreProfiles(jobs chan int, scores *scoresStore, comparer Comparer, wg *sy
 		score := &(scores.scores[j])
 		score.value = comparer.compare(score.fileA, score.fileB)
 		score.status = COMPLETE
+		nScores++
+		if nScores%100000 == 0 {
+			log.Printf("Worker %d has computed %d scores", workerID, nScores)
+		}
 	}
 }
 
-func indexProfiles(profiles chan Profile, indexer *Indexer, wg *sync.WaitGroup) {
+func indexProfiles(workerID int, profiles chan Profile, indexer *Indexer, wg *sync.WaitGroup) {
+	nIndexed := 0
+	defer func() {
+		log.Printf("Worker %d has indexed %d profiles", workerID, nIndexed)
+	}()
 	defer wg.Done()
 	for {
 		p, more := <-profiles
@@ -134,6 +147,10 @@ func indexProfiles(profiles chan Profile, indexer *Indexer, wg *sync.WaitGroup) 
 			return
 		}
 		indexer.Index(p)
+		nIndexed++
+		if nIndexed%100 == 0 {
+			log.Printf("Worker %d has indexed %d profiles", workerID, nIndexed)
+		}
 	}
 }
 
@@ -189,7 +206,7 @@ func scoreAll(scores scoresStore, profiles ProfileStore) error {
 
 	for i := 1; i <= numWorkers; i++ {
 		wg.Add(1)
-		go indexProfiles(profilesChan, indexer, &wg)
+		go indexProfiles(i, profilesChan, indexer, &wg)
 	}
 
 	wg.Wait()
@@ -206,7 +223,7 @@ func scoreAll(scores scoresStore, profiles ProfileStore) error {
 
 	for i := 1; i <= numWorkers; i++ {
 		wg.Add(1)
-		go scoreProfiles(jobs, &scores, Comparer{lookup: indexer.lookup}, &wg)
+		go scoreProfiles(i, jobs, &scores, Comparer{lookup: indexer.lookup}, &wg)
 	}
 
 	done := make(chan bool)
