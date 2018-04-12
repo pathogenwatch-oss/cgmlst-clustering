@@ -22,20 +22,19 @@ type L = []interface{}
 func updateScores(scores scoresStore, s *bsonkit.Document) error {
 	var (
 		fileA, fileB string
-		ok           bool
 		scoresDoc    *bsonkit.Document
-		score        int
+		score        int32
 	)
 
 	s.Seek(0)
 	for s.Next() {
 		switch string(s.Key()) {
 		case "fileId":
-			if fileA, ok = s.Value().(string); !ok {
+			if err := s.Value(&fileA); err != nil {
 				return errors.New("Couldn't parse fileId")
 			}
 		case "scores":
-			if scoresDoc, ok = s.Value().(*bsonkit.Document); !ok {
+			if err := s.Value(scoresDoc); err != nil {
 				return errors.New("Couldn't parse scores")
 			}
 		}
@@ -49,8 +48,10 @@ func updateScores(scores scoresStore, s *bsonkit.Document) error {
 
 	for scoresDoc.Next() {
 		fileB = string(scoresDoc.Key())
-		score = int(scoresDoc.Value().(int32))
-		scores.Set(scoreDetails{fileA, fileB, score, COMPLETE})
+		if err := scoresDoc.Value(&score); err != nil {
+			return errors.New("Couldn't parse score")
+		}
+		scores.Set(scoreDetails{fileA, fileB, int(score), COMPLETE})
 	}
 	if scoresDoc.Err != nil {
 		return scoresDoc.Err
@@ -207,32 +208,26 @@ func parseGenomeDoc(doc *bsonkit.Document) (fileIDs []string, err error) {
 	fileIDs = make([]string, 0)
 	seen := make(map[string]bool)
 	var (
-		ok     bool
-		fileID string
-		d      *bsonkit.Document
+		fileID     string
+		d, genomes *bsonkit.Document
 	)
 
 	doc.Seek(0)
-	var value interface{} = errors.New("Missing a list of genomes")
 	for doc.Next() {
 		if string(doc.Key()) == "genomes" {
-			value = doc.Value()
+			err = doc.Value(genomes)
 		}
 		continue
 	}
 	if doc.Err != nil {
 		err = doc.Err
 		return
-	}
-	genomes, ok := value.(*bsonkit.Document)
-	if !ok {
-		err = value.(error)
+	} else if err != nil {
 		return
 	}
 
 	for genomes.Next() {
-		if d, ok = genomes.Value().(*bsonkit.Document); !ok {
-			err = errors.New("Couldn't parse genome document")
+		if err = genomes.Value(d); err != nil {
 			return
 		}
 		fileID = ""
@@ -240,8 +235,7 @@ func parseGenomeDoc(doc *bsonkit.Document) (fileIDs []string, err error) {
 			if string(d.Key()) != "fileId" {
 				continue
 			}
-			if fileID, ok = d.Value().(string); !ok {
-				err = errors.New("Couldn't parse fileId")
+			if err = d.Value(&fileID); err != nil {
 				return
 			}
 			if _, duplicate := seen[fileID]; !duplicate {
@@ -266,16 +260,18 @@ func parseGenomeDoc(doc *bsonkit.Document) (fileIDs []string, err error) {
 }
 
 func parseMatch(matchDoc *bsonkit.Document) (gene string, id interface{}, err error) {
-	var ok bool
 	for matchDoc.Next() {
 		switch string(matchDoc.Key()) {
 		case "gene":
-			if gene, ok = matchDoc.Value().(string); !ok {
+			if err = matchDoc.Value(&gene); err != nil {
 				err = errors.New("Bad value for gene")
 				return
 			}
 		case "id":
-			id = matchDoc.Value()
+			if err = matchDoc.Value(&id); err != nil {
+				err = errors.New("Bad value for allele id")
+				return
+			}
 		}
 	}
 	if matchDoc.Err != nil {
@@ -286,8 +282,13 @@ func parseMatch(matchDoc *bsonkit.Document) (gene string, id interface{}, err er
 
 func parseMatches(matchesDoc *bsonkit.Document, p *Profile) error {
 	p.Matches = make(M)
+	var match *bsonkit.Document
+
 	for matchesDoc.Next() {
-		gene, id, err := parseMatch(matchesDoc.Value().(*bsonkit.Document))
+		if err := matchesDoc.Value(&match); err != nil {
+			return errors.New("Couldn't get match")
+		}
+		gene, id, err := parseMatch(match)
 		if err != nil {
 			return err
 		}
@@ -300,15 +301,20 @@ func parseMatches(matchesDoc *bsonkit.Document, p *Profile) error {
 }
 
 func parseCgMlst(cgmlstDoc *bsonkit.Document, p *Profile) (err error) {
-	var ok bool
+	var matches *bsonkit.Document
 	for cgmlstDoc.Next() {
 		switch string(cgmlstDoc.Key()) {
 		case "__v":
-			if p.Version, ok = cgmlstDoc.Value().(string); !ok {
-				err = errors.New("Bad value for __v")
+			if err = cgmlstDoc.Value(&p.Version); err != nil {
+				return errors.New("Bad value for __v")
 			}
 		case "matches":
-			err = parseMatches(cgmlstDoc.Value().(*bsonkit.Document), p)
+			if err = cgmlstDoc.Value(matches); err != nil {
+				return errors.New("Bad value for matches")
+			}
+			if err = parseMatches(matches, p); err != nil {
+				return errors.New("Bad value for matches")
+			}
 		}
 		if err != nil {
 			return
@@ -327,10 +333,14 @@ func parseCgMlst(cgmlstDoc *bsonkit.Document, p *Profile) (err error) {
 }
 
 func parseAnalysis(analysisDoc *bsonkit.Document, p *Profile) (err error) {
+	var cgmlstDoc *bsonkit.Document
 	for analysisDoc.Next() {
 		switch string(analysisDoc.Key()) {
 		case "cgmlst":
-			err = parseCgMlst(analysisDoc.Value().(*bsonkit.Document), p)
+			if err = analysisDoc.Value(&cgmlstDoc); err != nil {
+				return
+			}
+			err = parseCgMlst(cgmlstDoc, p)
 			return
 		}
 	}
@@ -341,28 +351,32 @@ func parseAnalysis(analysisDoc *bsonkit.Document, p *Profile) (err error) {
 }
 
 func parseProfile(doc *bsonkit.Document) (profile Profile, err error) {
-	var ok bool
+	var analysisDoc *bsonkit.Document
 	doc.Seek(0)
 	for doc.Next() {
 		switch string(doc.Key()) {
 		case "_id":
-			if profile.ID, ok = doc.Value().(bsonkit.ObjectID); !ok {
+			if err = doc.Value(&profile.ID); err != nil {
 				err = errors.New("Bad value for _id")
 			}
 		case "fileId":
-			if profile.FileID, ok = doc.Value().(string); !ok {
+			if err = doc.Value(&profile.FileID); err != nil {
 				err = errors.New("Bad value for fileId")
 			}
 		case "organismId":
-			if profile.OrganismID, ok = doc.Value().(string); !ok {
+			if err = doc.Value(&profile.OrganismID); err != nil {
 				err = errors.New("Bad value for organismId")
 			}
 		case "public":
-			if profile.Public, ok = doc.Value().(bool); !ok {
+			if err = doc.Value(&profile.Public); err != nil {
 				err = errors.New("Bad value for public")
 			}
 		case "analysis":
-			err = parseAnalysis(doc.Value().(*bsonkit.Document), &profile)
+			if err = doc.Value(analysisDoc); err != nil {
+				err = errors.New("Bad value for analysis")
+			} else {
+				err = parseAnalysis(analysisDoc, &profile)
+			}
 		}
 		if err != nil {
 			return
