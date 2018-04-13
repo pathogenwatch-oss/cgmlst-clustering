@@ -196,6 +196,37 @@ func toIndex(profiles ProfileStore, scores scoresStore, errChan chan error) chan
 	return indexChan
 }
 
+type CacheOutput struct {
+	FileID            string         `json:"fileId"`
+	AlleleDifferences map[string]int `json:"alleleDifferences"`
+}
+
+func buildCacheOutputs(scores scoresStore) chan CacheOutput {
+	outputChan := make(chan CacheOutput, 20)
+
+	rangeStart := func(idx int) int {
+		return (idx * (idx - 1)) / 2
+	}
+
+	go func() {
+		defer close(outputChan)
+		for i, fileA := range scores.fileIDs {
+			if i == 0 {
+				continue
+			}
+			start := rangeStart(i)
+			end := rangeStart(i + 1)
+			output := CacheOutput{fileA, make(map[string]int)}
+			for _, score := range scores.scores[start:end] {
+				output.AlleleDifferences[score.fileB] = score.value
+			}
+			outputChan <- output
+		}
+	}()
+
+	return outputChan
+}
+
 func scoreAll(scores scoresStore, profiles ProfileStore) error {
 	numWorkers := 1000
 	indexer := NewIndexer()

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"gitlab.com/cgps/bsonkit"
 )
@@ -228,4 +229,67 @@ func TestScoreAllStaph(t *testing.T) {
 	if nScores != nFileIds*(nFileIds-1)/2 {
 		t.Fatal("Expected some scores")
 	}
+}
+
+func TestBuildCacheOuputs(t *testing.T) {
+	fileIDs := []string{"1", "2", "3", "4"}
+	scores := NewScores(fileIDs)
+	testCases := []scoreDetails{
+		{"2", "1", 0, COMPLETE},
+		{"3", "1", 1, COMPLETE},
+		{"3", "2", 2, COMPLETE},
+		{"4", "1", 3, COMPLETE},
+		{"4", "2", 4, COMPLETE},
+		{"4", "3", 5, COMPLETE},
+	}
+	expected := []CacheOutput{
+		{"2", map[string]int{"1": 0}},
+		{"3", map[string]int{"1": 1, "2": 2}},
+		{"4", map[string]int{"1": 3, "2": 4, "3": 5}},
+	}
+
+	for _, tc := range testCases {
+		scores.Set(tc)
+	}
+
+	output := buildCacheOutputs(scores)
+	timeOut := time.After(5 * time.Second)
+
+	var (
+		actual CacheOutput
+		more   bool
+	)
+
+	for _, tc := range expected {
+		select {
+		case actual, more = <-output:
+			if !more {
+				t.Fatal("Expected more")
+			}
+		case <-timeOut:
+			t.Fatal("Shouldn't take this long")
+		}
+
+		if tc.FileID != actual.FileID {
+			t.Fatalf("Expected %v, got %v", tc, actual)
+		}
+		if len(tc.AlleleDifferences) != len(actual.AlleleDifferences) {
+			t.Fatalf("Expected %v, got %v", tc, actual)
+		}
+		for k, v := range tc.AlleleDifferences {
+			if v != actual.AlleleDifferences[k] {
+				t.Fatalf("Expected %v, got %v", tc, actual)
+			}
+		}
+	}
+
+	select {
+	case actual, more = <-output:
+		if more {
+			t.Fatal("Expected no more")
+		}
+	case <-timeOut:
+		t.Fatal("Shouldn't take this long")
+	}
+
 }
