@@ -51,15 +51,8 @@ function mutate(seed) {
   return mutation
 }
 
-function dumpFakeProfiles(p, nProfiles) {
-  console.log(`Creating ${nProfiles} fake profile documents in ${p}`) 
-  f = fs.createWriteStream(p)
-  
-  genomes = { genomes: []}
-  for (let i = 0; i < nProfiles; i++) {
-    genomes.genomes.push({ "fileId": objectId(i) })
-  }
-  f.write(bson.serialize(genomes))
+function fakeProfiles(nProfiles) {
+  console.log(`Creating ${nProfiles} fake profile documents`)
 
   nGenes = 2000
   seed =  []
@@ -74,12 +67,10 @@ function dumpFakeProfiles(p, nProfiles) {
       mutation = mutate(mutations[i])
       mutations.push(mutation)
       if (mutations.length % 1000 == 0) {
-        console.log(`Calculated ${mutations.length} fake mutations for ${p}`)
+        console.log(`Calculated ${mutations.length} fake mutations`)
       }
     }
   }
-
-  console.log(`Calculated ${mutations.length} fake mutations for ${p}`)
 
   publicProportion = 0.8
   for (i = 0; i < mutations.length; i++) {
@@ -102,63 +93,18 @@ function dumpFakeProfiles(p, nProfiles) {
         profile.analysis.cgmlst.matches.push({"gene": `gene${g}`, "id": m[g]})
       }
     }
+    mutations[i] = profile
     if (i == 5000) {
       nMatches = Object.values(profile.analysis.cgmlst.matches).length
       console.log(`Profile ${objectId(i)} has ${nMatches} matches`)
     }
-    f.write(bson.serialize(profile))
     if ((i+1) % 1000 == 0) {
-      console.log(`Written ${i+1} fake mutations to ${p}`)
+      console.log(`Created ${i+1} fake profiles`)
     }
   }
 
-  f.end()
-  console.log(`Written ${mutations.length} fake mutations to ${p}`)
+  return mutations
 }
-
-// function reformat(p) {
-//   const es = require('event-stream');
-//   const BsonStream = require('bson-stream');
-//   fileIds = new Set()
-
-//   const bs = new BsonStream()
-//   bs.on('data', d => {
-//     fileIds.add(d.fileId)
-//   })
-  
-//   bs.on('end', () => {
-//     process.stderr.write(`${fileIds.size} fileIDs\n`)
-//     process.stdout.write(
-//       bson.serialize({genomes: [ ...fileIds ].map(f => ({ fileId: f}))})
-//     )
-//     fs.createReadStream(p)
-//     .pipe(new BsonStream())
-//     .pipe(
-//       es.map((data, done) => {
-//         const doc = { ...data };
-//         doc._id = new BSON.ObjectID(data._id);
-//         delete doc.version;
-//         delete doc.matches;
-//         matches = [];
-//         for (m in data.matches) {
-//           matches.push({gene: m, id: data.matches[m]});
-//         }
-//         doc.analysis = {
-//           cgmlst: {
-//             __v: data.version,
-//             matches
-//           }
-//         };
-//         done(null, bson.serialize(doc));
-//       })
-//     ).pipe(process.stdout);
-//   })
-
-//   fs.createReadStream(p)
-//     .pipe(bs)
-// }
-
-// reformat("all_staph.bson.bak")
 
 function dumpBson(p, data) {
   console.log(`Adding ${data.length} documents to ${p}`)
@@ -172,7 +118,25 @@ function dumpBson(p, data) {
 }
 
 // Make some fake profiles
-dumpFakeProfiles("FakeProfiles.bson", 10000)
+profiles = fakeProfiles(7000)
+genomes = { genomes: []}
+for (let i = 0; i < profiles.length; i++) {
+  genomes.genomes.push({ "fileId": profiles[i].fileId })
+}
+fakeData = [genomes].concat(profiles)
+dumpBson("FakeProfiles.bson", fakeData)
+
+// Just the public profiles
+genomes = { genomes: []}
+fakeData = [genomes]
+for (let i = 0; i < profiles.length; i++) {
+  profile = profiles[i]
+  if (profile.public) {
+    genomes.genomes.push({ "fileId": profile.fileId })
+    fakeData.push(profile)
+  }
+}
+dumpBson("FakePublicProfiles.bson", fakeData)
 
 dumpBson("TestParseGenomeDoc.bson", [
   {
@@ -284,17 +248,3 @@ dumpBson("TestParse.bson", [
     }
   }
 ])
-
-deepStruct = []
-for (let i = 0; i < 10000; i++) {
-  doc = {
-    A: {
-      B: []
-    }
-  }
-  for (let j = 0; j < 2000; j++){
-    doc.A.B.push({C: j, i})
-  }
-  deepStruct.push(doc)
-}
-dumpBson("deepStruct.bson", deepStruct)

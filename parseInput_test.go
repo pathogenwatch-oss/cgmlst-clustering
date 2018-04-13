@@ -180,8 +180,14 @@ func TestParse(t *testing.T) {
 	if len(fileIDs) != 4 {
 		t.Fatal("Expected 4 fileIds")
 	}
-	if len(profiles.profiles) != 2 {
-		t.Fatalf("Expected 2 profiles, got %d\n", len(profiles.profiles))
+	nProfiles := 0
+	for _, seen := range profiles.seen {
+		if seen {
+			nProfiles++
+		}
+	}
+	if nProfiles != 2 {
+		t.Fatalf("Expected 2 profiles, got %v\n", profiles.profiles)
 	}
 	if len(scores.scores) != 6 {
 		t.Fatal("Expected 6 scores")
@@ -205,7 +211,7 @@ func TestAllParse(t *testing.T) {
 	if actual, expected := len(p.Matches), 1994; actual != expected {
 		t.Fatalf("Expected %d matches, got %d\n", expected, actual)
 	}
-	if nFileIDs, expected = len(fileIDs), 10000; nFileIDs != expected {
+	if nFileIDs, expected = len(fileIDs), 7000; nFileIDs != expected {
 		t.Fatalf("Expected %d fileIds, got %d\n", expected, nFileIDs)
 	}
 	if actual, expected := len(profiles.profiles), nFileIDs; actual != expected {

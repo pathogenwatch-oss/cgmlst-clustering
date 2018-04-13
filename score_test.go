@@ -40,9 +40,20 @@ func TestIndexer(t *testing.T) {
 			"gene4": 1,
 		},
 	})
+
+	valueOfGene3 := (1 << indexer.geneTokens.Get(AlleleKey{
+		"gene3",
+		nil,
+	}))
+	valueOfGene4 := (1 << indexer.geneTokens.Get(AlleleKey{
+		"gene4",
+		nil,
+	}))
+	expectedValue := 7 - valueOfGene3 + valueOfGene4
+
 	index = indexer.lookup["bcd234"]
-	if value := index.Genes.blocks[0]; value != 11 {
-		t.Fatalf("Got %d, expected 11\n", value)
+	if value := index.Genes.blocks[0]; value != uint64(expectedValue) {
+		t.Fatalf("Got %d, expected %d\n", value, expectedValue)
 	}
 	if value := index.Alleles.blocks[0]; value != 56 {
 		t.Fatalf("Got %d, expected 56\n", value)
@@ -223,7 +234,7 @@ func TestScoreAllStaph(t *testing.T) {
 
 	nFileIds := len(scores.fileIDs)
 	nScores := len(scores.scores)
-	if nFileIds != 10000 {
+	if nFileIds != 7000 {
 		t.Fatal("Expected some fileIds")
 	}
 	if nScores != nFileIds*(nFileIds-1)/2 {
