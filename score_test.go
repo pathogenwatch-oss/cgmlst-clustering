@@ -207,7 +207,7 @@ func TestTokeniser(t *testing.T) {
 }
 
 func TestScoreAllStaph(t *testing.T) {
-	testFile, err := os.Open("testdata/all_staph.bson")
+	testFile, err := os.Open("testdata/FakeProfiles.bson")
 	if err != nil {
 		t.Fatal("Couldn't load test data")
 	}
@@ -223,7 +223,7 @@ func TestScoreAllStaph(t *testing.T) {
 
 	nFileIds := len(scores.fileIDs)
 	nScores := len(scores.scores)
-	if nFileIds != 12056 {
+	if nFileIds != 10000 {
 		t.Fatal("Expected some fileIds")
 	}
 	if nScores != nFileIds*(nFileIds-1)/2 {

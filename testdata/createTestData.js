@@ -4,6 +4,118 @@ const path = require('path');
 
 const bson = new BSON();
 
+function getRandom(seed) {
+  // Modified from https://stackoverflow.com/a/19303725
+  // by Antti Sykäri
+  function _random() {
+    var x = Math.sin(seed++) * 10000;
+    return x - Math.floor(x);
+  }
+  return _random
+}
+
+random = getRandom(1)
+
+function novelAllele() {
+  return random().toString(16).slice(2)
+}
+
+function knownAllele() {
+  // Returns random numbers between 0 and 100
+  // biased towards 0
+  return 100 - Math.floor((random())**0.2 * 100)
+}
+
+function objectId(i) {
+  return `000000000000000000000000${i}`.slice(-24)
+}
+
+function mutate(seed) {
+  mutationRate = random() < 0.1 ? 0.2 : 0.02
+  novelAlleleRate = mutationRate * 0.02 // What is the chance it's 'novel'
+  missingRate = mutationRate * 0.02 // What is the chance it's missing
+  mutation = []
+  missing = 0
+  for (let i = 0; i < nGenes; i++) {
+    r = random()
+    if (r < mutationRate) {
+      mutation.push(knownAllele())
+    } else if (r < mutationRate + novelAlleleRate) {
+      mutation.push(novelAllele())
+    } else if (r < mutationRate + novelAlleleRate + missingRate) {
+      mutation.push(null)
+    } else {
+      mutation.push(seed[i])
+    }
+  }
+  return mutation
+}
+
+function dumpFakeProfiles(p, nProfiles) {
+  console.log(`Creating ${nProfiles} fake profile documents in ${p}`) 
+  f = fs.createWriteStream(p)
+  
+  genomes = { genomes: []}
+  for (let i = 0; i < nProfiles; i++) {
+    genomes.genomes.push({ "fileId": objectId(i) })
+  }
+  f.write(bson.serialize(genomes))
+
+  nGenes = 2000
+  seed =  []
+  for (let i = 0; i < nGenes; i++) {
+    seed.push(1)
+  }
+
+  mutations = [mutate(seed)]
+  while (mutations.length < nProfiles) {
+    extraMutations = Math.min(mutations.length, nProfiles - mutations.length)
+    for (let i = 0; i < extraMutations; i++) {
+      mutation = mutate(mutations[i])
+      mutations.push(mutation)
+      if (mutations.length % 1000 == 0) {
+        console.log(`Calculated ${mutations.length} fake mutations for ${p}`)
+      }
+    }
+  }
+
+  console.log(`Calculated ${mutations.length} fake mutations for ${p}`)
+
+  publicProportion = 0.8
+  for (i = 0; i < mutations.length; i++) {
+    m = mutations[i]
+    id = objectId(i)
+    profile = {
+      "_id":       new BSON.ObjectID(id),
+      "fileId":     id,
+      "organismId": "fake",
+      "public":     random() < publicProportion,
+      "analysis": {
+        "cgmlst": {
+          "__v":    "0",
+          "matches": [],
+        }
+      }
+    }
+    for (g = 0; g < nGenes; g++) {
+      if (m[g] != null) {
+        profile.analysis.cgmlst.matches.push({"gene": `gene${g}`, "id": m[g]})
+      }
+    }
+    if (i == 5000) {
+      nMatches = Object.values(profile.analysis.cgmlst.matches).length
+      console.log(`Profile ${objectId(i)} has ${nMatches} matches`)
+    }
+    f.write(bson.serialize(profile))
+    if ((i+1) % 1000 == 0) {
+      console.log(`Written ${i+1} fake mutations to ${p}`)
+    }
+  }
+
+  f.end()
+  console.log(`Written ${mutations.length} fake mutations to ${p}`)
+}
+
 // function reformat(p) {
 //   const es = require('event-stream');
 //   const BsonStream = require('bson-stream');
@@ -49,6 +161,7 @@ const bson = new BSON();
 // reformat("all_staph.bson.bak")
 
 function dumpBson(p, data) {
+  console.log(`Adding ${data.length} documents to ${p}`)
   f = fs.createWriteStream(p)
   for (let i =  0; i < data.length; i++) {
     f.write(
@@ -57,6 +170,9 @@ function dumpBson(p, data) {
   }
   f.end()
 }
+
+// Make some fake profiles
+dumpFakeProfiles("FakeProfiles.bson", 10000)
 
 dumpBson("TestParseGenomeDoc.bson", [
   {
@@ -170,17 +286,15 @@ dumpBson("TestParse.bson", [
 ])
 
 deepStruct = []
-for (i = 0; i < 10000; i++) {
+for (let i = 0; i < 10000; i++) {
   doc = {
     A: {
       B: []
     }
   }
-  for (j = 0; j < 2000; j++){
+  for (let j = 0; j < 2000; j++){
     doc.A.B.push({C: j, i})
   }
   deepStruct.push(doc)
-  if (i % 1000 == 0) 
-    process.stderr.write(`Added doc ${i}\n`)
 }
 dumpBson("deepStruct.bson", deepStruct)

@@ -190,7 +190,7 @@ func TestParse(t *testing.T) {
 
 func TestAllParse(t *testing.T) {
 	var nFileIDs, expected int
-	testFile, err := os.Open("testdata/all_staph.bson")
+	testFile, err := os.Open("testdata/FakeProfiles.bson")
 	if err != nil {
 		t.Fatal("Couldn't load test data")
 	}
@@ -198,14 +198,14 @@ func TestAllParse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := profiles.Get("cdc283e48ee0f027fc5761d9f1e63ed9806d01a3")
+	p, err := profiles.Get("000000000000000000005000")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if actual, expected := len(p.Matches), 2199; actual != expected {
+	if actual, expected := len(p.Matches), 1994; actual != expected {
 		t.Fatalf("Expected %d matches, got %d\n", expected, actual)
 	}
-	if nFileIDs, expected = len(fileIDs), 12056; nFileIDs != expected {
+	if nFileIDs, expected = len(fileIDs), 10000; nFileIDs != expected {
 		t.Fatalf("Expected %d fileIds, got %d\n", expected, nFileIDs)
 	}
 	if actual, expected := len(profiles.profiles), nFileIDs; actual != expected {
