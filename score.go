@@ -228,7 +228,7 @@ func buildCacheOutputs(scores scoresStore) chan CacheOutput {
 }
 
 func scoreAll(scores scoresStore, profiles ProfileStore) error {
-	numWorkers := 1000
+	numWorkers := 10
 	indexer := NewIndexer()
 	var wg sync.WaitGroup
 
