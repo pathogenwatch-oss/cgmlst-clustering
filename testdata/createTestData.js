@@ -1,6 +1,9 @@
 const fs = require('fs');
 const BSON = require('bson');
 const path = require('path');
+const assert = require('assert');
+const zlib = require('zlib')
+const readline = require('readline');
 
 const bson = new BSON();
 
@@ -106,9 +109,13 @@ function fakeProfiles(nProfiles) {
   return mutations
 }
 
-function dumpBson(p, data) {
+function dumpBson(p, data, append=false) {
+  opts = {}
+  if (append) {
+    opts.flags = 'a'
+  }
   console.log(`Adding ${data.length} documents to ${p}`)
-  f = fs.createWriteStream(p)
+  f = fs.createWriteStream(p, opts)
   for (let i =  0; i < data.length; i++) {
     f.write(
       bson.serialize(data[i])
@@ -117,134 +124,180 @@ function dumpBson(p, data) {
   f.end()
 }
 
-// Make some fake profiles
-profiles = fakeProfiles(7000)
-genomes = { genomes: []}
-for (let i = 0; i < profiles.length; i++) {
-  genomes.genomes.push({ "fileId": profiles[i].fileId })
+async function appendScores(data, scoresFile) {
+  var onDone
+  out = new Promise(resolve => {
+    onDone = resolve
+  })
+  appended = 0
+  
+  gunzip = zlib.createGunzip()
+  lines = readline.createInterface({
+    input: fs.createReadStream(scoresFile).pipe(gunzip)
+  })
+  
+  lines.on('line', line => {
+    data.push(JSON.parse(line))
+    appended++
+    if (appended%1000 == 0) {
+      console.log(`Parsed ${appended} scores from ${scoresFile}`)
+    }
+  })
+  lines.on('close', () => {
+    console.log(`Parsed ${appended} scores from ${scoresFile}`)
+    onDone()
+  })
+
+  return out
 }
-fakeData = [genomes].concat(profiles)
-dumpBson("FakeProfiles.bson", fakeData)
 
-// Just the public profiles
-genomes = { genomes: []}
-fakeData = [genomes]
-for (let i = 0; i < profiles.length; i++) {
-  profile = profiles[i]
-  if (profile.public) {
-    genomes.genomes.push({ "fileId": profile.fileId })
-    fakeData.push(profile)
+async function main() {
+  // Make some fake profiles
+  nProfiles = 7000
+  genomes = { genomes: []}
+  for (let i = 0; i < nProfiles; i++) {
+    genomes.genomes.push({ "fileId": objectId(i) })
   }
+  fakeData = [genomes]
+  await appendScores(fakeData, "FakePublicScores.json.gz")
+  assert.equal(fakeData.length, 5573)
+
+  dumpBson("FakeProfiles.bson", fakeData)
+  // I was running out of RAM
+  for (let i = 0; i < fakeData.length; i++) {
+    fakeData[i] = null
+  }
+  delete fakeData
+
+  profiles = fakeProfiles(nProfiles)
+  assert.equal(random(), 0.19474356789214653)
+  // If this assertion passes, the test data should be consistent
+  // MD5 (FakeProfiles.bson) = d6d5995ad3802177871a76cf59595620
+  // MD5 (FakePublicProfiles.bson) = ecd6c6358ba5943d38887323141d6fed
+  dumpBson("FakeProfiles.bson", profiles, true)
+
+  // Just the public profiles
+  genomes = { genomes: []}
+  fakeData = [genomes]
+  for (let i = 0; i < profiles.length; i++) {
+    profile = profiles[i]
+    if (profile.public) {
+      genomes.genomes.push({ "fileId": profile.fileId })
+      fakeData.push(profile)
+    }
+  }
+  dumpBson("FakePublicProfiles.bson", fakeData)
+
+  dumpBson("TestParseGenomeDoc.bson", [
+    {
+      genomes: [
+        { "fileId": "abc" },
+        { "fileId": "def" },
+        { "fileId": "ghi" }
+      ]
+    },
+    {
+      genomes: [
+        { "fileId": "abc" },
+        { "fileId": "abc" },
+        { "fileId": "ghi" }
+      ]
+    },
+    {
+      genomes: [
+        { "wrong": "abc" },
+      ]
+    },
+    {
+      wrong: [
+        { "fileId": "abc" },
+      ]
+    }
+  ])
+
+  dumpBson("TestUpdateScores.bson", [
+    {
+      "fileId": "abc",
+      "alleleDifferences": {
+        "bcd": 1,
+        "cde": 2,
+      },
+    }
+  ])
+
+  dumpBson("TestUpdateProfiles.bson", [
+    {
+      "_id":        new BSON.ObjectID(),
+      "fileId":     "abc",
+      "organismId": "1280",
+      "public":     true,
+      "analysis": {
+        "cgmlst": {
+          "__v":    "0",
+          "matches": [
+            {"gene": "foo", "id": 1},
+            {"gene": "bar", "id": "xyz"},
+          ],
+        }
+      }
+    }
+  ])
+
+  dumpBson("TestParse.bson", [
+    {
+      genomes: [
+        { "fileId": "abc" },
+        { "fileId": "def" },
+        { "fileId": "ghi" },
+        { "fileId": "jkl" }
+      ]
+    },
+    {
+      fileId: "abc",
+      alleleDifferences: {
+        "def": 1,
+        "ghi": 2,
+        "jkl": 3
+      }
+    },
+    {
+      fileId: "def",
+      alleleDifferences: {
+        "ghi": 4,
+        "jkl": 5
+      }
+    },
+    {
+      _id:        new BSON.ObjectID(),
+      fileId:     "ghi",
+      organismId: "1280",
+      public:     true,
+      analysis: {
+        cgmlst: {
+          __v:    "0",
+          matches: [
+            { gene: "foo", id: 1 },
+            { gene: "bar", id: "xyz" }
+          ]
+        }
+      }
+    },
+    {
+      _id:        new BSON.ObjectID(),
+      fileId:     "jkl",
+      organismId: "1280",
+      public:     true,
+      analysis: {
+        cgmlst: {
+          __v:    "0",
+          matches: [
+            { gene: "foo", id: 1 },
+            { gene: "bar", id: 2 }
+          ]
+        }
+      }
+    }
+  ])
 }
-dumpBson("FakePublicProfiles.bson", fakeData)
 
-dumpBson("TestParseGenomeDoc.bson", [
-  {
-    genomes: [
-      { "fileId": "abc" },
-      { "fileId": "def" },
-      { "fileId": "ghi" }
-    ]
-  },
-  {
-    genomes: [
-      { "fileId": "abc" },
-      { "fileId": "abc" },
-      { "fileId": "ghi" }
-    ]
-  },
-  {
-    genomes: [
-      { "wrong": "abc" },
-    ]
-  },
-  {
-    wrong: [
-      { "fileId": "abc" },
-    ]
-  }
-])
-
-dumpBson("TestUpdateScores.bson", [
-  {
-		"fileId": "abc",
-		"alleleDifferences": {
-			"bcd": 1,
-			"cde": 2,
-		},
-	}
-])
-
-dumpBson("TestUpdateProfiles.bson", [
-  {
-    "_id":        new BSON.ObjectID(),
-    "fileId":     "abc",
-    "organismId": "1280",
-    "public":     true,
-    "analysis": {
-      "cgmlst": {
-        "__v":    "0",
-        "matches": [
-          {"gene": "foo", "id": 1},
-          {"gene": "bar", "id": "xyz"},
-        ],
-      }
-    }
-  }
-])
-
-dumpBson("TestParse.bson", [
-  {
-    genomes: [
-      { "fileId": "abc" },
-      { "fileId": "def" },
-      { "fileId": "ghi" },
-      { "fileId": "jkl" }
-    ]
-  },
-  {
-    fileId: "abc",
-    alleleDifferences: {
-      "def": 1,
-      "ghi": 2,
-      "jkl": 3
-    }
-  },
-  {
-    fileId: "def",
-    alleleDifferences: {
-      "ghi": 4,
-      "jkl": 5
-    }
-  },
-  {
-    _id:        new BSON.ObjectID(),
-    fileId:     "ghi",
-    organismId: "1280",
-    public:     true,
-    analysis: {
-      cgmlst: {
-        __v:    "0",
-        matches: [
-          { gene: "foo", id: 1 },
-          { gene: "bar", id: "xyz" }
-        ]
-      }
-    }
-  },
-  {
-    _id:        new BSON.ObjectID(),
-    fileId:     "jkl",
-    organismId: "1280",
-    public:     true,
-    analysis: {
-      cgmlst: {
-        __v:    "0",
-        matches: [
-          { gene: "foo", id: 1 },
-          { gene: "bar", id: 2 }
-        ]
-      }
-    }
-  }
-])
+main().then(() => console.log("Done")).catch(err => console.log(err))
