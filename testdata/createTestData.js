@@ -88,7 +88,7 @@ dumpBson("TestParseGenomeDoc.bson", [
 dumpBson("TestUpdateScores.bson", [
   {
 		"fileId": "abc",
-		"scores": {
+		"alleleDifferences": {
 			"bcd": 1,
 			"cde": 2,
 		},
@@ -124,7 +124,7 @@ dumpBson("TestParse.bson", [
   },
   {
     fileId: "abc",
-    scores: {
+    alleleDifferences: {
       "def": 1,
       "ghi": 2,
       "jkl": 3
@@ -132,7 +132,7 @@ dumpBson("TestParse.bson", [
   },
   {
     fileId: "def",
-    scores: {
+    alleleDifferences: {
       "ghi": 4,
       "jkl": 5
     }

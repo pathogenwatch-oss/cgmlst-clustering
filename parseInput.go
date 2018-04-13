@@ -33,9 +33,9 @@ func updateScores(scores scoresStore, s *bsonkit.Document) error {
 			if err := s.Value(&fileA); err != nil {
 				return errors.New("Couldn't parse fileId")
 			}
-		case "scores":
+		case "alleleDifferences":
 			if err := s.Value(scoresDoc); err != nil {
-				return errors.New("Couldn't parse scores")
+				return errors.New("Couldn't parse alleleDifferences")
 			}
 		}
 	}
@@ -441,7 +441,7 @@ func parse(r io.Reader) (fileIDs []string, profiles ProfileStore, scores scoresS
 		for doc := range docChan {
 			for doc.Next() {
 				switch string(doc.Key()) {
-				case "scores":
+				case "alleleDifferences":
 					if err := updateScores(scores, doc); err != nil {
 						errChan <- err
 						return
