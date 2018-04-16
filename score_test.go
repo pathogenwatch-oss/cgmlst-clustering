@@ -217,7 +217,7 @@ func TestTokeniser(t *testing.T) {
 	}
 }
 
-func TestScoreAllStaph(t *testing.T) {
+func TestScoreAllFakeData(t *testing.T) {
 	testFile, err := os.Open("testdata/FakeProfiles.bson")
 	if err != nil {
 		t.Fatal("Couldn't load test data")
@@ -239,6 +239,12 @@ func TestScoreAllStaph(t *testing.T) {
 	}
 	if nScores != nFileIds*(nFileIds-1)/2 {
 		t.Fatal("Expected some scores")
+	}
+
+	for _, s := range scores.scores {
+		if s.status != COMPLETE {
+			t.Fatalf("Expected all scores to be complete: %v", s)
+		}
 	}
 }
 

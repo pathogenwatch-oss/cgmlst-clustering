@@ -110,18 +110,11 @@ function fakeProfiles(nProfiles) {
 }
 
 function dumpBson(p, data, append=false) {
-  opts = {}
-  if (append) {
-    opts.flags = 'a'
-  }
   console.log(`Adding ${data.length} documents to ${p}`)
-  f = fs.createWriteStream(p, opts)
+  fn = fs.openSync(p, append ? 'a' : 'w')
   for (let i =  0; i < data.length; i++) {
-    f.write(
-      bson.serialize(data[i])
-    )
+    fs.writeSync(fn, bson.serialize(data[i]))
   }
-  f.end()
 }
 
 async function appendScores(data, scoresFile) {

@@ -222,6 +222,51 @@ func TestAllParse(t *testing.T) {
 	}
 }
 
+func TestRead(t *testing.T) {
+	testFile, err := os.Open("testdata/FakeProfiles.bson")
+	if err != nil {
+		t.Fatal("Couldn't load test data")
+	}
+
+	docs := bsonkit.GetDocuments(testFile)
+	docs.Next()
+
+	doc := docs.Doc
+	if !doc.Next() {
+		t.Fatal("Expected a key")
+	} else if doc.Err != nil {
+		t.Fatal(doc.Err)
+	}
+
+	scores := 0
+	profiles := 0
+	for docs.Next() {
+		doc = docs.Doc
+		for doc.Next() {
+			if string(doc.Key()) == "alleleDifferences" {
+				scores++
+				break
+			} else if string(doc.Key()) == "analysis" {
+				profiles++
+				break
+			}
+		}
+		if doc.Err != nil {
+			t.Fatal(doc.Err)
+		}
+	}
+	if docs.Err != nil {
+		t.Fatal(doc.Err)
+	}
+
+	if profiles != 7000 {
+		t.Fatalf("Expected 10000 profiles, got %d\n", profiles)
+	}
+	if scores != 5572 {
+		t.Fatalf("Expected 5572 alleleDifferences got %d\n", scores)
+	}
+}
+
 func BenchmarkScores(b *testing.B) {
 	fileIDs := make([]string, 1000)
 	for i := 0; i < 1000; i++ {
