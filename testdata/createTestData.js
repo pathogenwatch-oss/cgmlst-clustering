@@ -80,14 +80,12 @@ function fakeProfiles(nProfiles) {
     m = mutations[i]
     id = objectId(i)
     profile = {
-      "_id":       new BSON.ObjectID(id),
-      "fileId":     id,
-      "organismId": "fake",
-      "public":     random() < publicProportion,
-      "analysis": {
-        "cgmlst": {
-          "__v":    "0",
-          "matches": [],
+      _id: new BSON.ObjectID(id),
+      public: random() < publicProportion,
+      analysis: {
+        cgmlst: {
+          st: id,
+          matches: [],
         }
       }
     }
@@ -152,7 +150,7 @@ async function main() {
     id = objectId(i)
     genomes.genomes.push({
       "_id": new BSON.ObjectID(id),
-      "fileId": id
+      "st": id
     })
   }
   fakeData = [genomes]
@@ -182,7 +180,7 @@ async function main() {
       id = objectId(i)
       genomes.genomes.push({
         "_id": new BSON.ObjectID(id),
-        "fileId": id
+        "st": id
       })
       fakeData.push(profile)
     }
@@ -192,16 +190,16 @@ async function main() {
   dumpBson("TestParseGenomeDoc.bson", [
     {
       genomes: [
-        { "fileId": "abc" },
-        { "fileId": "def" },
-        { "fileId": "ghi" }
+        { "_id": new BSON.ObjectID(1), "st": "abc" },
+        { "_id": new BSON.ObjectID(2), "st": "def" },
+        { "_id": new BSON.ObjectID(3), "st": "ghi" }
       ]
     },
     {
       genomes: [
-        { "fileId": "abc" },
-        { "fileId": "abc" },
-        { "fileId": "ghi" }
+        { "_id": new BSON.ObjectID(4), "st": "abc" },
+        { "_id": new BSON.ObjectID(5), "st": "abc" },
+        { "_id": new BSON.ObjectID(6), "st": "ghi" }
       ]
     },
     {
@@ -211,14 +209,14 @@ async function main() {
     },
     {
       wrong: [
-        { "fileId": "abc" },
+        { "_id": new BSON.ObjectID(7), "st": "abc" },
       ]
     }
   ])
 
   dumpBson("TestUpdateScores.bson", [
     {
-      "fileId": "abc",
+      "st": "abc",
       "alleleDifferences": {
         "bcd": 1,
         "cde": 2,
@@ -229,12 +227,13 @@ async function main() {
   dumpBson("TestUpdateProfiles.bson", [
     {
       "_id":        new BSON.ObjectID(),
-      "fileId":     "abc",
+      "fileId":     "whoCares",
       "organismId": "1280",
       "public":     true,
       "analysis": {
         "cgmlst": {
           "__v":    "0",
+          "st": "abc",
           "matches": [
             {"gene": "foo", "id": 1},
             {"gene": "bar", "id": "xyz"},
@@ -247,14 +246,14 @@ async function main() {
   dumpBson("TestParse.bson", [
     {
       genomes: [
-        { "fileId": "abc" },
-        { "fileId": "def" },
-        { "fileId": "ghi" },
-        { "fileId": "jkl" }
+        { _id: new BSON.ObjectID(1), st: "abc" },
+        { _id: new BSON.ObjectID(2), st: "def" },
+        { _id: new BSON.ObjectID(3), st: "ghi" },
+        { _id: new BSON.ObjectID(4), st: "jkl" }
       ]
     },
     {
-      fileId: "abc",
+      st: "abc",
       alleleDifferences: {
         "def": 1,
         "ghi": 2,
@@ -262,20 +261,21 @@ async function main() {
       }
     },
     {
-      fileId: "def",
+      st: "def",
       alleleDifferences: {
         "ghi": 4,
         "jkl": 5
       }
     },
     {
-      _id:        new BSON.ObjectID(),
-      fileId:     "ghi",
+      _id:        new BSON.ObjectID(3),
+      fileId:     "xxx",
       organismId: "1280",
       public:     true,
       analysis: {
         cgmlst: {
           __v:    "0",
+          st: "ghi",
           matches: [
             { gene: "foo", id: 1 },
             { gene: "bar", id: "xyz" }
@@ -284,13 +284,14 @@ async function main() {
       }
     },
     {
-      _id:        new BSON.ObjectID(),
-      fileId:     "jkl",
+      _id:        new BSON.ObjectID(4),
+      fileId:     "yyy",
       organismId: "1280",
       public:     true,
       analysis: {
         cgmlst: {
           __v:    "0",
+          st: "jkl",
           matches: [
             { gene: "foo", id: 1 },
             { gene: "bar", id: 2 }

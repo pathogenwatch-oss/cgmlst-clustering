@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func compareClusters(t *testing.T, actual []string, expected []string) {
+func compareClusters(t *testing.T, actual []int, expected []int) {
 	if len(actual) != len(expected) {
 		t.Fatalf("%v != %v\n", actual, expected)
 	}
@@ -33,14 +33,18 @@ func TestGet(t *testing.T) {
 		{"a", "f", 4, COMPLETE}, {"b", "f", 3, COMPLETE}, {"c", "f", 5, COMPLETE}, {"d", "f", 6, COMPLETE}, {"e", "f", 7, COMPLETE},
 	}
 
-	scores := scoresStore{scores: distances, fileIDs: []string{"a", "b", "c", "d", "e", "f"}}
-	clusters := NewClusters(scores)
+	scores := scoresStore{scores: distances, STs: []string{"a", "b", "c", "d", "e", "f"}}
+	distanceValues, _ := scores.Distances()
+	clusters, err := NewClusters(len(scores.STs), distanceValues)
+	if err != nil {
+		t.Fatal(err)
+	}
 	value := clusters.Get(1)
-	expected := []string{"a", "a", "c", "d", "d", "f"}
+	expected := []int{1, 1, 2, 4, 4, 5}
 	compareClusters(t, value, expected)
 
 	value = clusters.Get(2)
-	expected = []string{"a", "a", "a", "a", "a", "f"}
+	expected = []int{4, 4, 4, 4, 4, 5}
 	compareClusters(t, value, expected)
 }
 
@@ -64,39 +68,43 @@ func TestAnotherGet(t *testing.T) {
 		{"a", "g", 7, COMPLETE}, {"b", "g", 5, COMPLETE}, {"c", "g", 5, COMPLETE}, {"d", "g", 8, COMPLETE}, {"e", "g", 9, COMPLETE}, {"f", "g", 9, COMPLETE},
 	}
 
-	scores := scoresStore{scores: distances, fileIDs: []string{"a", "b", "c", "d", "e", "f", "g"}}
-	clusters := NewClusters(scores)
+	scores := scoresStore{scores: distances, STs: []string{"a", "b", "c", "d", "e", "f", "g"}}
+	distanceValues, _ := scores.Distances()
+	clusters, err := NewClusters(len(scores.STs), distanceValues)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	value := clusters.Get(1)
-	expected := []string{"a", "b", "c", "d", "e", "f", "g"}
+	expected := []int{0, 1, 2, 3, 4, 5, 6}
 	compareClusters(t, value, expected)
 
 	value = clusters.Get(2)
-	expected = []string{"a", "a", "c", "d", "e", "f", "g"}
+	expected = []int{1, 1, 2, 3, 4, 5, 6}
 	compareClusters(t, value, expected)
 
 	value = clusters.Get(3)
-	expected = []string{"a", "a", "c", "c", "e", "f", "g"}
+	expected = []int{1, 1, 3, 3, 4, 5, 6}
 	compareClusters(t, value, expected)
 
 	value = clusters.Get(4)
-	expected = []string{"a", "a", "c", "c", "a", "c", "g"}
+	expected = []int{4, 4, 5, 5, 4, 5, 6}
 	compareClusters(t, value, expected)
 
 	value = clusters.Get(5)
-	expected = []string{"a", "a", "a", "a", "a", "a", "a"}
+	expected = []int{6, 6, 6, 6, 6, 6, 6}
 	compareClusters(t, value, expected)
 
 	value = clusters.Get(6)
-	expected = []string{"a", "a", "a", "a", "a", "a", "a"}
+	expected = []int{6, 6, 6, 6, 6, 6, 6}
 	compareClusters(t, value, expected)
 
 	value = clusters.Get(17)
-	expected = []string{"a", "a", "a", "a", "a", "a", "a"}
+	expected = []int{6, 6, 6, 6, 6, 6, 6}
 	compareClusters(t, value, expected)
 
 	value = clusters.Get(100)
-	expected = []string{"a", "a", "a", "a", "a", "a", "a"}
+	expected = []int{6, 6, 6, 6, 6, 6, 6}
 	compareClusters(t, value, expected)
 }
 
@@ -104,26 +112,26 @@ func randomScores(n int, seed int64) scoresStore {
 	r := rand.New(rand.NewSource(seed))
 	nDistances := (n * (n - 1)) / 2
 	distances := make([]scoreDetails, nDistances)
-	fileIDs := make([]string, n)
-	fileIDs[0] = fmt.Sprintf("file%d", 0)
+	STs := make([]string, n)
+	STs[0] = fmt.Sprintf("st%d", 0)
 
 	idx := 0
 	for a := 1; a < n; a++ {
-		fileA := fmt.Sprintf("file%d", a)
-		fileIDs[a] = fileA
+		stA := fmt.Sprintf("st%d", a)
+		STs[a] = stA
 		for b := 0; b < a; b++ {
-			fileB := fmt.Sprintf("file%d", b)
-			distances[idx] = scoreDetails{fileA, fileB, r.Intn(100 * n), COMPLETE}
+			stB := fmt.Sprintf("st%d", b)
+			distances[idx] = scoreDetails{stA, stB, r.Intn(100 * n), COMPLETE}
 			idx++
 		}
 	}
 
-	return scoresStore{scores: distances, fileIDs: fileIDs}
+	return scoresStore{scores: distances, STs: STs}
 }
 
-func checkClusters(t *testing.T, scores scoresStore, clusters []string, threshold int) {
+func checkClusters(t *testing.T, scores scoresStore, clusters []int, threshold int) {
 	idx := 0
-	for a := 1; a < len(scores.fileIDs); a++ {
+	for a := 1; a < len(scores.STs); a++ {
 		for b := 0; b < a; b++ {
 			d := scores.scores[idx].value
 			if d <= threshold {
@@ -136,8 +144,8 @@ func checkClusters(t *testing.T, scores scoresStore, clusters []string, threshol
 	}
 }
 
-func countClusters(clusters []string) int {
-	seen := make(map[string]bool)
+func countClusters(clusters []int) int {
+	seen := make(map[int]bool)
 	for _, c := range clusters {
 		seen[c] = true
 	}
@@ -146,8 +154,17 @@ func countClusters(clusters []string) int {
 
 func TestRandomClusters(t *testing.T) {
 	for seed := int64(0); seed < 10; seed++ {
-		scores := randomScores(1000, seed)
-		clusters := NewClusters(scores)
+		nScores := 1000
+		scores := randomScores(nScores, seed)
+
+		distances, err := scores.Distances()
+		if err != nil {
+			t.Fatal(err)
+		}
+		clusters, err := NewClusters(nScores, distances)
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		for _, threshold := range []int{10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000} {
 			clusters := clusters.Get(threshold)
@@ -159,14 +176,26 @@ func TestRandomClusters(t *testing.T) {
 }
 
 func TestLotsOfRandomClusters(t *testing.T) {
-	scores := randomScores(100000, 0)
-	clusters := NewClusters(scores)
+	log.Println("TestLotsOfRandomClusters: Start")
+	nScores := 10000
 
+	scores := randomScores(nScores, 0)
+	distances, err := scores.Distances()
+	if err != nil {
+		t.Fatal(err)
+	}
 	log.Println("Made the fake scores")
-	thresholds := []int{100, 500, 1000, 2000}
 
+	clusters, err := NewClusters(nScores, distances)
+	if err != nil {
+		t.Fatal(err)
+	}
+	log.Println("Clustered")
+
+	thresholds := []int{100, 500, 1000, 2000}
 	for _, threshold := range thresholds {
 		_ = clusters.Get(threshold)
+		log.Println("Clustered at threshold:", threshold)
 	}
-	log.Println("Done the clustering")
+
 }

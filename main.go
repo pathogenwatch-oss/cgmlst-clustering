@@ -29,58 +29,55 @@ func isSmaller(a, b bsonkit.ObjectID) bool {
 	return bytes.Compare(a[:], b[:]) < 0
 }
 
-func mapGenomeToCluster(threshold int, c Clusters, IDs []GenomeID) []ClusterDetails {
-	// For each genome we want to return the name of the cluster
+func mapGenomeToCluster(threshold int, c Clusters, STs []CgmlstSt, IDs []GenomeSTPair) []ClusterDetails {
+	// TODO add a test for this
+
+	// For each genome we want to return the name of their cluster
 	// clusters are named after their first member, this is the sequence
 	// with the smallest genomeID.
+	minIDs := make(map[CgmlstSt]GenomeID)
 
-	type fileID = string
-	type genomeID = bsonkit.ObjectID
-	type clusterID = int
-	minIDs := make(map[fileID]genomeID)
-
-	// Each fileID could be shared with more than one genomeID.  We find the
-	// smallest (i.e. earliest) genomeID for each fileID
+	// Each CgMLST sequence type (ST) could be shared with more than one genomeID.  We find the
+	// smallest (i.e. earliest) genomeID for each ST
 	for _, id := range IDs {
-		if current, found := minIDs[id.fileID]; !found || isSmaller(id.id, current) {
-			minIDs[id.fileID] = id.id
+		if current, found := minIDs[id.ST]; !found || isSmaller(id.ID, current) {
+			minIDs[id.ST] = id.ID
 		}
 	}
 
-	// clusterIDs are arbitrary integers identifying the cluster of each fileID
-	// They're sorted the same as fileIDs below.
+	// clusterIDs are arbitrary integers identifying the cluster of each ST
+	// They're sorted the same as STs below.
 	clusterIDs := c.Get(threshold)
-	fileIDs := c.fileIDs
 
-	minCluster := make(map[clusterID]genomeID)
+	minCluster := make(map[clusterID]GenomeID)
 	var (
-		fID fileID
-		gID genomeID
+		ST  CgmlstSt
+		gID GenomeID
 	)
 
-	// This is used to store a map between each fileID and the cluster it is found
-	// in.  The clusterIDs are essentially meaningless integers.
-	fileIDToClusterID := make(map[fileID]clusterID)
+	// This is used to store a map between each ST and the cluster it is found
+	// in.  The clusterIDs are essentially random integers.
+	StToClusterID := make(map[CgmlstSt]clusterID)
 
 	for i, cID := range clusterIDs {
-		fID = fileIDs[i]
-		fileIDToClusterID[fID] = cID
+		ST = STs[i]
+		StToClusterID[ST] = cID
 
-		// gID is the smallest genomeID for a given fileID
-		gID = minIDs[fID] // ASSUMPTION: this will always be found otherwise where did we get the fileID?
+		// gID is the smallest genomeID for a given ST
+		gID = minIDs[ST] // ASSUMPTION: this will always be found otherwise where did we get the ST?
 		if current, found := minCluster[cID]; !found || isSmaller(gID, current) {
 			minCluster[cID] = gID
 		}
 	}
 
-	// Now we have a mapping between fileIDs and clusterIDs and the smallest
+	// Now we have a mapping between STs and clusterIDs and the smallest
 	// genomeID for each clusterID, we can iterate over the genomes and say
 	// which is the smallest genomeID they share a cluster with.
 	clusters := make([]ClusterDetails, len(IDs))
 	for i, id := range IDs {
-		cID := fileIDToClusterID[id.fileID]
+		cID := StToClusterID[id.ST]
 		cName := minCluster[cID]
-		clusters[i] = ClusterDetails{id.id, cName}
+		clusters[i] = ClusterDetails{id.ID, cName}
 	}
 
 	return clusters
@@ -88,7 +85,7 @@ func mapGenomeToCluster(threshold int, c Clusters, IDs []GenomeID) []ClusterDeta
 
 func main() {
 	r := (io.Reader)(os.Stdin)
-	fileIDs, IDs, profiles, scores, err := parse(r)
+	STs, IDs, profiles, scores, err := parse(r)
 	if err != nil {
 		panic(err)
 	}
@@ -102,17 +99,25 @@ func main() {
 		enc.Encode(c)
 	}
 
+	distances, err := scores.Distances()
+	if err != nil {
+		panic(err)
+	}
+
 	// TODO: HARDCODED
 	taxid := "1280"
-	clusters := NewClusters(scores)
+	clusters, err := NewClusters(len(scores.STs), distances)
+	if err != nil {
+		panic(err)
+	}
 	for _, threshold := range thresholds[taxid] {
 		details := ClusterOutput{
 			Taxid:     taxid,
 			Threshold: threshold,
-			Genomes:   mapGenomeToCluster(threshold, clusters, IDs),
+			Genomes:   mapGenomeToCluster(threshold, clusters, STs, IDs),
 		}
 		enc.Encode(details)
 	}
 
-	log.Printf("fileIDs: %d; Scores: %d\n", len(fileIDs), len(scores.scores))
+	log.Printf("STs: %d; Scores: %d\n", len(STs), len(scores.scores))
 }

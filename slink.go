@@ -1,22 +1,37 @@
 package main
 
 import (
+	"errors"
 	"math"
 )
 
 const ALMOST_INF = math.MaxInt32
 
+type clusterID = int
+
 type Clusters struct {
-	pi      []int
-	lambda  []int
-	fileIDs []string
+	pi     []int
+	lambda []int
+	nItems int
 }
 
-func NewClusters(scores scoresStore) (c Clusters) {
-	distances := scores.scores
-	c.fileIDs = scores.fileIDs
-	c.pi = make([]int, len(c.fileIDs))
-	c.lambda = make([]int, len(c.fileIDs))
+func NewClusters(nItems int, distances []int) (c Clusters, err error) {
+	// If items are {a, b, c, d, e} then the distances between them should be arranged:
+	// distances := {
+	// 	(a => b),
+	// 	(a => c), (b => c),
+	// 	(a => d), (b => d), (c => d),
+	// 	(a => e), (b => e), (c => e), (d => e),
+	// }
+
+	if len(distances) != (nItems*(nItems-1))/2 {
+		err = errors.New("Wrong number of distances given")
+		return
+	}
+
+	c.pi = make([]int, nItems)
+	c.lambda = make([]int, nItems)
+	c.nItems = nItems
 
 	// Uses the SLINK algorithm for single linkage clustering
 	// http://www.cs.gsu.edu/~wkim/index_files/papers/sibson.pdf
@@ -29,11 +44,11 @@ func NewClusters(scores scoresStore) (c Clusters) {
 	// lambda[i] is the distance at which `i` would be clustered with something bigger than it
 	// pi[i] is the biggest object in the cluster it joins
 
-	M := make([]scoreDetails, len(c.fileIDs))
+	M := make([]int, nItems)
 	mStart := 0
 	mEnd := 0
 
-	for n := 0; n < len(c.fileIDs); n++ {
+	for n := 0; n < nItems; n++ {
 		// We build up pi and lambda by adding each datum in increasing size
 
 		// If the sequences are {a, b, c, d}
@@ -50,15 +65,15 @@ func NewClusters(scores scoresStore) (c Clusters) {
 		c.lambda[n] = ALMOST_INF
 
 		for i := 0; i < n; i++ {
-			if M[i].value <= c.lambda[i] { // There's a new bigger thing closer than we thought
-				if M[c.pi[i]].value > c.lambda[i] {
-					M[c.pi[i]].value = c.lambda[i] // The thing i was pointing could be considered closer to n
+			if M[i] <= c.lambda[i] { // There's a new bigger thing closer than we thought
+				if M[c.pi[i]] > c.lambda[i] {
+					M[c.pi[i]] = c.lambda[i] // The thing i was pointing could be considered closer to n
 				}
-				c.pi[i] = n              // The next biggest thing is now n
-				c.lambda[i] = M[i].value // And update the distance to it
+				c.pi[i] = n        // The next biggest thing is now n
+				c.lambda[i] = M[i] // And update the distance to it
 			} else {
-				if M[c.pi[i]].value > M[i].value {
-					M[c.pi[i]].value = M[i].value // The thing i was pointing could be considered closer to n
+				if M[c.pi[i]] > M[i] {
+					M[c.pi[i]] = M[i] // The thing i was pointing could be considered closer to n
 				}
 			}
 		}
@@ -74,7 +89,7 @@ func NewClusters(scores scoresStore) (c Clusters) {
 }
 
 func (c Clusters) Get(threshold int) []int {
-	clusterIDs := make([]int, len(c.fileIDs))
+	clusterIDs := make([]int, c.nItems)
 	for i := len(clusterIDs) - 1; i >= 0; i-- {
 		if c.lambda[i] > threshold {
 			clusterIDs[i] = i

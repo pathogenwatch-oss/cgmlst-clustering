@@ -11,17 +11,19 @@ import (
 )
 
 const (
-	PENDING  int = iota
-	COMPLETE int = iota
+	PENDING  int = 0
+	COMPLETE int = 1
 )
 
+type GenomeID = bsonkit.ObjectID
+type CgmlstSt = string
 type M = map[string]interface{}
 type L = []interface{}
 
 func updateScores(scores scoresStore, s *bsonkit.Document) error {
 	var (
-		fileA, fileB string
-		score        int32
+		stA, stB CgmlstSt
+		score    int32
 	)
 
 	scoresDoc := new(bsonkit.Document)
@@ -29,9 +31,9 @@ func updateScores(scores scoresStore, s *bsonkit.Document) error {
 	s.Seek(0)
 	for s.Next() {
 		switch string(s.Key()) {
-		case "fileId":
-			if err := s.Value(&fileA); err != nil {
-				return errors.New("Couldn't parse fileId")
+		case "st":
+			if err := s.Value(&stA); err != nil {
+				return errors.New("Couldn't parse st")
 			}
 		case "alleleDifferences":
 			if err := s.Value(scoresDoc); err != nil {
@@ -42,16 +44,16 @@ func updateScores(scores scoresStore, s *bsonkit.Document) error {
 	if s.Err != nil {
 		return s.Err
 	}
-	if fileA == "" {
-		return errors.New("Couldn't find a fileId")
+	if stA == "" {
+		return errors.New("Couldn't find a st")
 	}
 
 	for scoresDoc.Next() {
-		fileB = string(scoresDoc.Key())
+		stB = string(scoresDoc.Key())
 		if err := scoresDoc.Value(&score); err != nil {
 			return errors.New("Couldn't parse score")
 		}
-		scores.Set(scoreDetails{fileA, fileB, int(score), COMPLETE})
+		scores.Set(scoreDetails{stA, stB, int(score), COMPLETE})
 	}
 	if scoresDoc.Err != nil {
 		return scoresDoc.Err
@@ -61,16 +63,13 @@ func updateScores(scores scoresStore, s *bsonkit.Document) error {
 }
 
 type Profile struct {
-	ID         bsonkit.ObjectID
-	OrganismID string
-	FileID     string
-	Public     bool
-	Version    string
-	Matches    M
+	ID      GenomeID
+	ST      CgmlstSt
+	Matches M
 }
 
 type ProfileStore struct {
-	lookup   map[string]int
+	lookup   map[CgmlstSt]int
 	profiles []Profile
 	seen     []bool
 }
@@ -83,9 +82,9 @@ func NewProfileStore(scores *scoresStore) (profiles ProfileStore) {
 }
 
 func (profiles *ProfileStore) Add(p Profile) error {
-	idx, known := profiles.lookup[p.FileID]
+	idx, known := profiles.lookup[p.ST]
 	if !known {
-		return fmt.Errorf("unknown fileId %s", p.FileID)
+		return fmt.Errorf("unknown fileId %s", p.ST)
 	}
 
 	if profiles.seen[idx] {
@@ -98,13 +97,13 @@ func (profiles *ProfileStore) Add(p Profile) error {
 	return nil
 }
 
-func (profiles *ProfileStore) Get(fileID string) (Profile, error) {
-	idx, known := profiles.lookup[fileID]
+func (profiles *ProfileStore) Get(ST CgmlstSt) (Profile, error) {
+	idx, known := profiles.lookup[ST]
 	if !known {
-		return Profile{}, fmt.Errorf("unknown fileId %s", fileID)
+		return Profile{}, fmt.Errorf("unknown ST %s", ST)
 	}
 	if seen := profiles.seen[idx]; !seen {
-		return Profile{}, fmt.Errorf("unknown fileId %s", fileID)
+		return Profile{}, fmt.Errorf("unknown ST %s", ST)
 	}
 	return profiles.profiles[idx], nil
 }
@@ -115,7 +114,7 @@ func updateProfiles(profiles ProfileStore, doc *bsonkit.Document) error {
 		return err
 	}
 
-	if p.FileID == "" {
+	if p.ST == "" {
 		return errors.New("Profile doc had an invalid fileId")
 	}
 
@@ -123,45 +122,46 @@ func updateProfiles(profiles ProfileStore, doc *bsonkit.Document) error {
 }
 
 type scoreDetails struct {
-	fileA, fileB  string
+	stA, stB      CgmlstSt
 	value, status int
 }
 
 type scoresStore struct {
-	lookup  map[string]int
-	scores  []scoreDetails
-	fileIDs []string
+	lookup map[CgmlstSt]int
+	scores []scoreDetails
+	STs    []CgmlstSt
 }
 
-func NewScores(fileIDs []string) (s scoresStore) {
-	s.fileIDs = fileIDs
-	s.scores = make([]scoreDetails, len(fileIDs)*(len(fileIDs)-1)/2)
-	s.lookup = make(map[string]int)
-	for idx, fileID := range fileIDs {
-		s.lookup[fileID] = idx
+func NewScores(STs []CgmlstSt) (s scoresStore) {
+	s.STs = STs
+	s.scores = make([]scoreDetails, len(STs)*(len(STs)-1)/2)
+	s.lookup = make(map[CgmlstSt]int)
+	for idx, st := range STs {
+		s.lookup[st] = idx
 	}
+	// TODO: Do we need to do this initialisation.  PENDING is probably the default value
 	idx := 0
-	for i, fileA := range fileIDs {
-		for _, fileB := range fileIDs[:i] {
-			s.scores[idx] = scoreDetails{fileA, fileB, 0, PENDING}
+	for i, stA := range STs {
+		for _, stB := range STs[:i] {
+			s.scores[idx] = scoreDetails{stA, stB, 0, PENDING}
 			idx++
 		}
 	}
 	return
 }
 
-func (s scoresStore) getIndex(fileA string, fileB string) (int, error) {
-	idxA, ok := s.lookup[fileA]
+func (s scoresStore) getIndex(stA string, stB string) (int, error) {
+	idxA, ok := s.lookup[stA]
 	if !ok {
-		return 0, fmt.Errorf("unknown fileId %s", fileA)
+		return 0, fmt.Errorf("unknown ST %s", stA)
 	}
-	idxB, ok := s.lookup[fileB]
+	idxB, ok := s.lookup[stB]
 	if !ok {
-		return 0, fmt.Errorf("unknown fileId %s", fileB)
+		return 0, fmt.Errorf("unknown ST %s", stB)
 	}
 	minIdx, maxIdx := idxA, idxB
 	if idxA == idxB {
-		return 0, fmt.Errorf("fileIds shouldn't both be %s", fileA)
+		return 0, fmt.Errorf("STs shouldn't both be %s", stA)
 	} else if idxA > idxB {
 		minIdx = idxB
 		maxIdx = idxA
@@ -171,7 +171,7 @@ func (s scoresStore) getIndex(fileA string, fileB string) (int, error) {
 }
 
 func (s *scoresStore) Set(score scoreDetails) error {
-	idx, err := s.getIndex(score.fileA, score.fileB)
+	idx, err := s.getIndex(score.stA, score.stB)
 	if err != nil {
 		return err
 	}
@@ -179,18 +179,32 @@ func (s *scoresStore) Set(score scoreDetails) error {
 	return nil
 }
 
-func (s scoresStore) Get(fileA string, fileB string) (scoreDetails, error) {
-	idx, err := s.getIndex(fileA, fileB)
+func (s scoresStore) Get(stA string, stB string) (scoreDetails, error) {
+	idx, err := s.getIndex(stA, stB)
 	if err != nil {
 		return scoreDetails{}, err
 	}
 	return s.scores[idx], nil
 }
 
-func parseGenomeDoc(doc *bsonkit.Document) (fileIDs []string, IDs []GenomeID, err error) {
-	IDs = make([]GenomeID, 0, 100)
-	fileIDs = make([]string, 0, 100)
-	seenFileIDs := make(map[string]bool)
+func (s scoresStore) Distances() ([]int, error) {
+	distances := make([]int, len(s.scores))
+
+	for i := 0; i < len(distances); i++ {
+		score := s.scores[i]
+		if score.status != COMPLETE {
+			return distances, errors.New("Haven't found scores for all pairs of STs")
+		}
+		distances[i] = score.value
+	}
+
+	return distances, nil
+}
+
+func parseGenomeDoc(doc *bsonkit.Document) (STs []CgmlstSt, IDs []GenomeSTPair, err error) {
+	IDs = make([]GenomeSTPair, 0, 100)
+	STs = make([]string, 0, 100)
+	seenSTs := make(map[CgmlstSt]bool)
 	d := new(bsonkit.Document)
 	genomes := new(bsonkit.Document)
 
@@ -217,38 +231,38 @@ func parseGenomeDoc(doc *bsonkit.Document) (fileIDs []string, IDs []GenomeID, er
 		}
 
 		var (
-			id               bsonkit.ObjectID
-			fileID           string
-			setFileId, setId bool
+			id           GenomeID
+			ST           CgmlstSt
+			setST, setID bool
 		)
 
 		for d.Next() {
 			switch string(d.Key()) {
-			case "fileId":
-				if err = d.Value(&fileID); err != nil {
+			case "st":
+				if err = d.Value(&ST); err != nil {
 					return
 				}
-				setFileId = true
+				setST = true
 			case "_id":
 				if err = d.Value(&id); err != nil {
 					return
 				}
-				setId = true
+				setID = true
 			}
 		}
 
 		if d.Err != nil {
 			err = d.Err
 			return
-		} else if !setFileId || !setId {
+		} else if !setST || !setID {
 			err = errors.New("Couldn't parse genome ids")
 			return
 		}
 
-		IDs = append(IDs, GenomeID{id, fileID})
-		if _, seen := seenFileIDs[fileID]; !seen {
-			seenFileIDs[fileID] = true
-			fileIDs = append(fileIDs, fileID)
+		IDs = append(IDs, GenomeSTPair{id, ST})
+		if _, seen := seenSTs[ST]; !seen {
+			seenSTs[ST] = true
+			STs = append(STs, ST)
 		}
 	}
 
@@ -304,9 +318,9 @@ func parseCgMlst(cgmlstDoc *bsonkit.Document, p *Profile) (err error) {
 	matches := new(bsonkit.Document)
 	for cgmlstDoc.Next() {
 		switch string(cgmlstDoc.Key()) {
-		case "__v":
-			if err = cgmlstDoc.Value(&p.Version); err != nil {
-				return errors.New("Bad value for __v")
+		case "st":
+			if err = cgmlstDoc.Value(&p.ST); err != nil {
+				return errors.New("Bad value for st")
 			}
 		case "matches":
 			if err = cgmlstDoc.Value(matches); err != nil {
@@ -323,8 +337,8 @@ func parseCgMlst(cgmlstDoc *bsonkit.Document, p *Profile) (err error) {
 	if cgmlstDoc.Err != nil {
 		return cgmlstDoc.Err
 	}
-	if p.Version == "" {
-		return errors.New("version not found")
+	if p.ST == "" {
+		return errors.New("st not found")
 	}
 	if len(p.Matches) == 0 {
 		return errors.New("No matches parsed")
@@ -359,18 +373,6 @@ func parseProfile(doc *bsonkit.Document) (profile Profile, err error) {
 			if err = doc.Value(&profile.ID); err != nil {
 				err = errors.New("Bad value for _id")
 			}
-		case "fileId":
-			if err = doc.Value(&profile.FileID); err != nil {
-				err = errors.New("Bad value for fileId")
-			}
-		case "organismId":
-			if err = doc.Value(&profile.OrganismID); err != nil {
-				err = errors.New("Bad value for organismId")
-			}
-		case "public":
-			if err = doc.Value(&profile.Public); err != nil {
-				err = errors.New("Bad value for public")
-			}
 		case "analysis":
 			if err = doc.Value(analysisDoc); err != nil {
 				err = errors.New("Bad value for analysis")
@@ -388,12 +390,12 @@ func parseProfile(doc *bsonkit.Document) (profile Profile, err error) {
 	return
 }
 
-type GenomeID struct {
-	id     bsonkit.ObjectID
-	fileID string
+type GenomeSTPair struct {
+	ID bsonkit.ObjectID
+	ST CgmlstSt
 }
 
-func parse(r io.Reader) (fileIDs []string, IDs []GenomeID, profiles ProfileStore, scores scoresStore, err error) {
+func parse(r io.Reader) (STs []CgmlstSt, IDs []GenomeSTPair, profiles ProfileStore, scores scoresStore, err error) {
 	err = nil
 	errChan := make(chan error)
 	numWorkers := 5
@@ -424,7 +426,7 @@ func parse(r io.Reader) (fileIDs []string, IDs []GenomeID, profiles ProfileStore
 	for firstDoc.Next() {
 		switch string(firstDoc.Key()) {
 		case "genomes":
-			fileIDs, IDs, err = parseGenomeDoc(firstDoc)
+			STs, IDs, err = parseGenomeDoc(firstDoc)
 			if err != nil {
 				return
 			}
@@ -441,9 +443,9 @@ func parse(r io.Reader) (fileIDs []string, IDs []GenomeID, profiles ProfileStore
 		return
 	}
 
-	log.Printf("Found %d fileIds\n", len(fileIDs))
+	log.Printf("Found %d STs\n", len(STs))
 
-	scores = NewScores(fileIDs)
+	scores = NewScores(STs)
 	profiles = NewProfileStore(&scores)
 
 	worker := func(workerID int) {
