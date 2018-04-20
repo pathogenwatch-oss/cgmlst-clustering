@@ -74,13 +74,13 @@ func NewClusters(scores scoresStore) (c Clusters) {
 }
 
 func (c Clusters) Get(threshold int) []int {
-	out := make([]int, len(c.fileIDs))
-	for i := len(out) - 1; i >= 0; i-- {
+	clusterIDs := make([]int, len(c.fileIDs))
+	for i := len(clusterIDs) - 1; i >= 0; i-- {
 		if c.lambda[i] > threshold {
-			out[i] = i
+			clusterIDs[i] = i
 		} else {
-			out[i] = out[c.pi[i]]
+			clusterIDs[i] = clusterIDs[c.pi[i]]
 		}
 	}
-	return out
+	return clusterIDs
 }

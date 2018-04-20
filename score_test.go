@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"testing"
 	"time"
@@ -245,6 +246,13 @@ func TestScoreAllFakeData(t *testing.T) {
 		if s.status != COMPLETE {
 			t.Fatalf("Expected all scores to be complete: %v", s)
 		}
+	}
+
+	clusters := NewClusters(scores)
+	thresholds := []int{10, 50, 100, 200}
+	for _, threshold := range thresholds {
+		c := clusters.Get(threshold)
+		log.Println(threshold, countClusters(c))
 	}
 }
 

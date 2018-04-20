@@ -187,13 +187,10 @@ func (s scoresStore) Get(fileA string, fileB string) (scoreDetails, error) {
 	return s.scores[idx], nil
 }
 
-func parseGenomeDoc(doc *bsonkit.Document) (fileIDs []string, err error) {
-	fileIDs = make([]string, 0)
-	seen := make(map[string]bool)
-	var (
-		fileID string
-	)
-
+func parseGenomeDoc(doc *bsonkit.Document) (fileIDs []string, IDs []GenomeID, err error) {
+	IDs = make([]GenomeID, 0, 100)
+	fileIDs = make([]string, 0, 100)
+	seenFileIDs := make(map[string]bool)
 	d := new(bsonkit.Document)
 	genomes := new(bsonkit.Document)
 
@@ -218,32 +215,47 @@ func parseGenomeDoc(doc *bsonkit.Document) (fileIDs []string, err error) {
 		if err = genomes.Value(d); err != nil {
 			return
 		}
-		fileID = ""
+
+		var (
+			id               bsonkit.ObjectID
+			fileID           string
+			setFileId, setId bool
+		)
+
 		for d.Next() {
-			if string(d.Key()) != "fileId" {
-				continue
+			switch string(d.Key()) {
+			case "fileId":
+				if err = d.Value(&fileID); err != nil {
+					return
+				}
+				setFileId = true
+			case "_id":
+				if err = d.Value(&id); err != nil {
+					return
+				}
+				setId = true
 			}
-			if err = d.Value(&fileID); err != nil {
-				return
-			}
-			if _, duplicate := seen[fileID]; !duplicate {
-				fileIDs = append(fileIDs, fileID)
-				seen[fileID] = true
-			}
-			break
 		}
+
 		if d.Err != nil {
 			err = d.Err
 			return
-		} else if fileID == "" {
-			err = errors.New("Document didn't contain a fileId")
+		} else if !setFileId || !setId {
+			err = errors.New("Couldn't parse genome ids")
 			return
+		}
+
+		IDs = append(IDs, GenomeID{id, fileID})
+		if _, seen := seenFileIDs[fileID]; !seen {
+			seenFileIDs[fileID] = true
+			fileIDs = append(fileIDs, fileID)
 		}
 	}
 
 	if genomes.Err != nil {
 		err = genomes.Err
 	}
+
 	return
 }
 
@@ -376,7 +388,12 @@ func parseProfile(doc *bsonkit.Document) (profile Profile, err error) {
 	return
 }
 
-func parse(r io.Reader) (fileIDs []string, profiles ProfileStore, scores scoresStore, err error) {
+type GenomeID struct {
+	id     bsonkit.ObjectID
+	fileID string
+}
+
+func parse(r io.Reader) (fileIDs []string, IDs []GenomeID, profiles ProfileStore, scores scoresStore, err error) {
 	err = nil
 	errChan := make(chan error)
 	numWorkers := 5
@@ -407,7 +424,7 @@ func parse(r io.Reader) (fileIDs []string, profiles ProfileStore, scores scoresS
 	for firstDoc.Next() {
 		switch string(firstDoc.Key()) {
 		case "genomes":
-			fileIDs, err = parseGenomeDoc(firstDoc)
+			fileIDs, IDs, err = parseGenomeDoc(firstDoc)
 			if err != nil {
 				return
 			}
@@ -419,8 +436,8 @@ func parse(r io.Reader) (fileIDs []string, profiles ProfileStore, scores scoresS
 		return
 	}
 
-	if len(fileIDs) == 0 {
-		err = errors.New("No fileIds found in first doc")
+	if len(IDs) == 0 {
+		err = errors.New("No ids found in first doc")
 		return
 	}
 

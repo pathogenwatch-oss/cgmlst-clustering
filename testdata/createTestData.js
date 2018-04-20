@@ -149,7 +149,11 @@ async function main() {
   nProfiles = 7000
   genomes = { genomes: []}
   for (let i = 0; i < nProfiles; i++) {
-    genomes.genomes.push({ "fileId": objectId(i) })
+    id = objectId(i)
+    genomes.genomes.push({
+      "_id": new BSON.ObjectID(id),
+      "fileId": id
+    })
   }
   fakeData = [genomes]
   await appendScores(fakeData, "FakePublicScores.json.gz")
@@ -175,7 +179,11 @@ async function main() {
   for (let i = 0; i < profiles.length; i++) {
     profile = profiles[i]
     if (profile.public) {
-      genomes.genomes.push({ "fileId": profile.fileId })
+      id = objectId(i)
+      genomes.genomes.push({
+        "_id": new BSON.ObjectID(id),
+        "fileId": id
+      })
       fakeData.push(profile)
     }
   }
