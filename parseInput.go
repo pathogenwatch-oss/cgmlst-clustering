@@ -273,14 +273,9 @@ func parseGenomeDoc(doc *bsonkit.Document) (STs []CgmlstSt, IDs []GenomeSTPair, 
 	return
 }
 
-func parseMatch(matchDoc *bsonkit.Document) (gene string, id interface{}, err error) {
+func parseMatch(matchDoc *bsonkit.Document) (id interface{}, err error) {
 	for matchDoc.Next() {
 		switch string(matchDoc.Key()) {
-		case "gene":
-			if err = matchDoc.Value(&gene); err != nil {
-				err = errors.New("Bad value for gene")
-				return
-			}
 		case "id":
 			if err = matchDoc.Value(&id); err != nil {
 				err = errors.New("Bad value for allele id")
@@ -294,22 +289,23 @@ func parseMatch(matchDoc *bsonkit.Document) (gene string, id interface{}, err er
 	return
 }
 
-func parseMatches(matchesDoc *bsonkit.Document, p *Profile) error {
+func parseMatches(alleles *bsonkit.Document, p *Profile) error {
 	p.Matches = make(M)
 	match := new(bsonkit.Document)
 
-	for matchesDoc.Next() {
-		if err := matchesDoc.Value(match); err != nil {
+	for alleles.Next() {
+		gene := string(alleles.Key())
+		if err := alleles.Value(match); err != nil {
 			return errors.New("Couldn't get match")
 		}
-		gene, id, err := parseMatch(match)
+		id, err := parseMatch(match)
 		if err != nil {
 			return err
 		}
 		p.Matches[gene] = id
 	}
-	if matchesDoc.Err != nil {
-		return matchesDoc.Err
+	if alleles.Err != nil {
+		return alleles.Err
 	}
 	return nil
 }
@@ -322,12 +318,12 @@ func parseCgMlst(cgmlstDoc *bsonkit.Document, p *Profile) (err error) {
 			if err = cgmlstDoc.Value(&p.ST); err != nil {
 				return errors.New("Bad value for st")
 			}
-		case "matches":
+		case "alleles":
 			if err = cgmlstDoc.Value(matches); err != nil {
-				return errors.New("Bad value for matches")
+				return errors.New("Bad value for alleles")
 			}
 			if err = parseMatches(matches, p); err != nil {
-				return errors.New("Bad value for matches")
+				return errors.New("Bad value for alleles")
 			}
 		}
 		if err != nil {
