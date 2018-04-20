@@ -53,14 +53,14 @@ type Indexer struct {
 	sync.Mutex
 	geneTokens   *Tokeniser
 	alleleTokens *Tokeniser
-	lookup       map[string]Index
+	lookup       map[CgmlstSt]Index
 }
 
 func NewIndexer() *Indexer {
 	i := Indexer{
 		geneTokens:   NewTokeniser(),
 		alleleTokens: NewTokeniser(),
-		lookup:       make(map[string]Index),
+		lookup:       make(map[CgmlstSt]Index),
 	}
 	return &i
 }
@@ -68,7 +68,7 @@ func NewIndexer() *Indexer {
 func (i *Indexer) Index(profile Profile) Index {
 	defer i.Unlock()
 	i.Lock()
-	if index, ok := i.lookup[profile.FileID]; ok {
+	if index, ok := i.lookup[profile.ST]; ok {
 		return index
 	}
 	genesBa := NewBitArray(2500)
@@ -95,17 +95,17 @@ func (i *Indexer) Index(profile Profile) Index {
 		Genes:   genesBa,
 		Alleles: allelesBa,
 	}
-	i.lookup[profile.FileID] = index
+	i.lookup[profile.ST] = index
 	return index
 }
 
 type Comparer struct {
-	lookup map[string]Index
+	lookup map[CgmlstSt]Index
 }
 
-func (c *Comparer) compare(fileIDA string, fileIDB string) int {
-	indexA, okA := c.lookup[fileIDA]
-	indexB, okB := c.lookup[fileIDB]
+func (c *Comparer) compare(stA string, stB string) int {
+	indexA, okA := c.lookup[stA]
+	indexB, okB := c.lookup[stB]
 	if !okA || !okB {
 		panic("Missing index")
 	}
@@ -126,7 +126,7 @@ func scoreProfiles(workerID int, jobs chan int, scores *scoresStore, comparer Co
 			return
 		}
 		score := &(scores.scores[j])
-		score.value = comparer.compare(score.fileA, score.fileB)
+		score.value = comparer.compare(score.stA, score.stB)
 		score.status = COMPLETE
 		nScores++
 		if nScores%100000 == 0 {
@@ -155,22 +155,22 @@ func indexProfiles(workerID int, profiles chan Profile, indexer *Indexer, wg *sy
 }
 
 type scoresResult struct {
-	FileIDs []string
-	Scores  []int
+	STs    []CgmlstSt
+	Scores []int
 }
 
 func toIndex(profiles ProfileStore, scores scoresStore, errChan chan error) chan Profile {
-	queued := make([]bool, len(scores.fileIDs))
+	queued := make([]bool, len(scores.STs))
 	indexChan := make(chan Profile, 50)
 
 	go func() {
 		idx := 0
-		for i := 1; i < len(scores.fileIDs); i++ {
+		for i := 1; i < len(scores.STs); i++ {
 			for j := 0; j < i; j++ {
 				if scores.scores[idx].status == PENDING {
 					if !queued[i] {
 						if !profiles.seen[i] {
-							errChan <- fmt.Errorf("expected profile for %s", scores.fileIDs[i])
+							errChan <- fmt.Errorf("expected profile for %s", scores.STs[i])
 							return
 						} else {
 							indexChan <- profiles.profiles[i]
@@ -179,7 +179,7 @@ func toIndex(profiles ProfileStore, scores scoresStore, errChan chan error) chan
 					}
 					if !queued[j] {
 						if !profiles.seen[j] {
-							errChan <- fmt.Errorf("expected profile for %s", scores.fileIDs[j])
+							errChan <- fmt.Errorf("expected profile for %s", scores.STs[j])
 							return
 						} else {
 							indexChan <- profiles.profiles[j]
@@ -197,8 +197,8 @@ func toIndex(profiles ProfileStore, scores scoresStore, errChan chan error) chan
 }
 
 type CacheOutput struct {
-	FileID            string         `json:"fileId"`
-	AlleleDifferences map[string]int `json:"alleleDifferences"`
+	ST                CgmlstSt         `json:"st"`
+	AlleleDifferences map[CgmlstSt]int `json:"alleleDifferences"`
 }
 
 func buildCacheOutputs(scores scoresStore) chan CacheOutput {
@@ -210,15 +210,15 @@ func buildCacheOutputs(scores scoresStore) chan CacheOutput {
 
 	go func() {
 		defer close(outputChan)
-		for i, fileA := range scores.fileIDs {
+		for i, stA := range scores.STs {
 			if i == 0 {
 				continue
 			}
 			start := rangeStart(i)
 			end := rangeStart(i + 1)
-			output := CacheOutput{fileA, make(map[string]int)}
+			output := CacheOutput{stA, make(map[string]int)}
 			for _, score := range scores.scores[start:end] {
-				output.AlleleDifferences[score.fileB] = score.value
+				output.AlleleDifferences[score.stB] = score.value
 			}
 			outputChan <- output
 		}

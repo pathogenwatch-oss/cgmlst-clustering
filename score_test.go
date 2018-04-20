@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"testing"
 	"time"
@@ -12,11 +13,8 @@ import (
 func TestIndexer(t *testing.T) {
 	indexer := NewIndexer()
 	indexer.Index(Profile{
-		ID:         bsonkit.ObjectID{byte(0)},
-		OrganismID: "1280",
-		FileID:     "abc123",
-		Public:     false,
-		Version:    "v1",
+		ID: bsonkit.ObjectID{byte(0)},
+		ST: "abc123",
 		Matches: map[string]interface{}{
 			"gene1": 1,
 			"gene2": 1,
@@ -29,11 +27,8 @@ func TestIndexer(t *testing.T) {
 	}
 
 	indexer.Index(Profile{
-		ID:         bsonkit.ObjectID{byte(1)},
-		OrganismID: "1280",
-		FileID:     "bcd234",
-		Public:     false,
-		Version:    "v1",
+		ID: bsonkit.ObjectID{byte(1)},
+		ST: "bcd234",
 		Matches: map[string]interface{}{
 			"gene1": 2,
 			"gene2": 2,
@@ -63,11 +58,8 @@ func TestIndexer(t *testing.T) {
 func TestComparer(t *testing.T) {
 	profiles := [...]Profile{
 		Profile{
-			ID:         bsonkit.ObjectID{byte(0)},
-			OrganismID: "1280",
-			FileID:     "abc123",
-			Public:     false,
-			Version:    "v1",
+			ID: bsonkit.ObjectID{byte(0)},
+			ST: "abc123",
 			Matches: map[string]interface{}{
 				"gene1": 1,
 				"gene2": 1,
@@ -75,11 +67,8 @@ func TestComparer(t *testing.T) {
 			},
 		},
 		Profile{
-			ID:         bsonkit.ObjectID{byte(1)},
-			OrganismID: "1280",
-			FileID:     "bcd234",
-			Public:     false,
-			Version:    "v1",
+			ID: bsonkit.ObjectID{byte(1)},
+			ST: "bcd234",
 			Matches: map[string]interface{}{
 				"gene1": 2,
 				"gene2": 2,
@@ -87,11 +76,8 @@ func TestComparer(t *testing.T) {
 			},
 		},
 		Profile{
-			ID:         bsonkit.ObjectID{byte(2)},
-			OrganismID: "1280",
-			FileID:     "cde345",
-			Public:     false,
-			Version:    "v1",
+			ID: bsonkit.ObjectID{byte(2)},
+			ST: "cde345",
 			Matches: map[string]interface{}{
 				"gene1": 1,
 				"gene2": 2,
@@ -134,11 +120,8 @@ func TestComparer(t *testing.T) {
 func TestScoreAll(t *testing.T) {
 	testProfiles := [...]Profile{
 		Profile{
-			ID:         bsonkit.ObjectID{byte(0)},
-			OrganismID: "1280",
-			FileID:     "abc123",
-			Public:     false,
-			Version:    "v1",
+			ID: bsonkit.ObjectID{byte(0)},
+			ST: "abc123",
 			Matches: map[string]interface{}{
 				"gene1": 1,
 				"gene2": 1,
@@ -146,11 +129,8 @@ func TestScoreAll(t *testing.T) {
 			},
 		},
 		Profile{
-			ID:         bsonkit.ObjectID{byte(1)},
-			OrganismID: "1280",
-			FileID:     "bcd234",
-			Public:     false,
-			Version:    "v1",
+			ID: bsonkit.ObjectID{byte(1)},
+			ST: "bcd234",
 			Matches: map[string]interface{}{
 				"gene1": 2,
 				"gene2": 2,
@@ -158,11 +138,8 @@ func TestScoreAll(t *testing.T) {
 			},
 		},
 		Profile{
-			ID:         bsonkit.ObjectID{byte(2)},
-			OrganismID: "1280",
-			FileID:     "cde345",
-			Public:     false,
-			Version:    "v1",
+			ID: bsonkit.ObjectID{byte(2)},
+			ST: "cde345",
 			Matches: map[string]interface{}{
 				"gene1": 1,
 				"gene2": 2,
@@ -172,8 +149,8 @@ func TestScoreAll(t *testing.T) {
 		},
 	}
 
-	fileIDs := []string{"abc123", "bcd234", "cde345"}
-	scores := NewScores(fileIDs)
+	STs := []string{"abc123", "bcd234", "cde345"}
+	scores := NewScores(STs)
 	profiles := NewProfileStore(&scores)
 	for _, p := range testProfiles {
 		profiles.Add(p)
@@ -183,11 +160,11 @@ func TestScoreAll(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	nFileIds := len(scores.fileIDs)
-	if nFileIds != len(testProfiles) {
-		t.Fatal("Not enough fileIds")
+	nSTs := len(scores.STs)
+	if nSTs != len(testProfiles) {
+		t.Fatal("Not enough STs")
 	}
-	if len(scores.scores) != nFileIds*(nFileIds-1)/2 {
+	if len(scores.scores) != nSTs*(nSTs-1)/2 {
 		t.Fatal("Not enough scores")
 	}
 	expectedScores := []int{2, 1, 1}
@@ -223,7 +200,7 @@ func TestScoreAllFakeData(t *testing.T) {
 		t.Fatal("Couldn't load test data")
 	}
 
-	_, profiles, scores, err := parse(testFile)
+	_, _, profiles, scores, err := parse(testFile)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,12 +209,12 @@ func TestScoreAllFakeData(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	nFileIds := len(scores.fileIDs)
+	nSTs := len(scores.STs)
 	nScores := len(scores.scores)
-	if nFileIds != 7000 {
-		t.Fatal("Expected some fileIds")
+	if nSTs != 7000 {
+		t.Fatal("Expected some STs")
 	}
-	if nScores != nFileIds*(nFileIds-1)/2 {
+	if nScores != nSTs*(nSTs-1)/2 {
 		t.Fatal("Expected some scores")
 	}
 
@@ -246,11 +223,27 @@ func TestScoreAllFakeData(t *testing.T) {
 			t.Fatalf("Expected all scores to be complete: %v", s)
 		}
 	}
+
+	distances, err := scores.Distances()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	clusters, err := NewClusters(nSTs, distances)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	thresholds := []int{10, 50, 100, 200}
+	for _, threshold := range thresholds {
+		c := clusters.Get(threshold)
+		log.Println(threshold, countClusters(c))
+	}
 }
 
 func TestBuildCacheOuputs(t *testing.T) {
-	fileIDs := []string{"1", "2", "3", "4"}
-	scores := NewScores(fileIDs)
+	STs := []string{"1", "2", "3", "4"}
+	scores := NewScores(STs)
 	testCases := []scoreDetails{
 		{"2", "1", 0, COMPLETE},
 		{"3", "1", 1, COMPLETE},
@@ -287,7 +280,7 @@ func TestBuildCacheOuputs(t *testing.T) {
 			t.Fatal("Shouldn't take this long")
 		}
 
-		if tc.FileID != actual.FileID {
+		if tc.ST != actual.ST {
 			t.Fatalf("Expected %v, got %v", tc, actual)
 		}
 		if len(tc.AlleleDifferences) != len(actual.AlleleDifferences) {
