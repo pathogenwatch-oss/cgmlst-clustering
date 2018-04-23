@@ -1,8 +1,11 @@
 FROM golang:1.9-alpine as go
 
 ARG git_credentials
-RUN apk add --update git bash && ./bin/git-config.sh $git_credentials
-RUN go get gitlab.com/cgps/bsonkit
+COPY bin/git-config.sh .
+RUN apk add --update -t git-deps git bash \
+  && ./git-config.sh $git_credentials \
+  && go get gitlab.com/cgps/bsonkit \
+  && apk del --purge git-deps
 
 COPY *.go /tmp/clustering/
 RUN cd /tmp/clustering \
