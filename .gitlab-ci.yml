@@ -4,11 +4,12 @@ test:
   stage: test
   image: golang:1.9-alpine
   script:
-    - apk add --update --repository http://dl-3.alpinelinux.org/alpine/edge/main nodejs nodejs-npm
+    - apk add --update --repository http://dl-3.alpinelinux.org/alpine/edge/main nodejs nodejs-npm git
     - cd testdata
     - npm install bson
     - node createTestData.js
     - cd ..
+    - go get gitlab.com/cgps/bsonkit
     - go test
   cache:
     untracked: true
@@ -19,8 +20,12 @@ deploy:
   stage: deploy
   script:
     - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
-    - docker build --pull -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG" .
+    - docker build \
+        --pull \
+        --build-arg http_proxy=$http_proxy \
+        --build-arg https_proxy=$https_proxy \
+        --build-arg ftp_proxy=$https_proxy \
+        -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG" .
     - docker push "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG"
   only:
     - tags
-
