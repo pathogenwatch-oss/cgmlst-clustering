@@ -8,6 +8,7 @@ test:
     - cd testdata
     - npm install bson
     - node createTestData.js
+    - cd ..
     - go test
   cache:
     untracked: true
