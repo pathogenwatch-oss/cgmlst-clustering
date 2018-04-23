@@ -1,0 +1,23 @@
+{
+  "name": "cgps-cgmlst-clustering",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@gitlab.com/cgps/cgps-cgmlst-clustering.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://gitlab.com/cgps/cgps-cgmlst-clustering/issues"
+  },
+  "homepage": "https://gitlab.com/cgps/cgps-cgmlst-clustering#README",
+  "devDependencies": {
+    "bson": "^2.0.5"
+  }
+}
