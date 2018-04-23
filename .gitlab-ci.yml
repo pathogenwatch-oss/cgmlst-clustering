@@ -5,8 +5,9 @@ test:
   image: golang:1.9-alpine
   script:
     - apk add --update nodejs nodejs-npm
-    - cd testdata && npm install bson
-    - cd testdata && node createTestData.js
+    - cd testdata
+    - npm install bson
+    - node createTestData.js
     - go test
   cache:
     untracked: true
