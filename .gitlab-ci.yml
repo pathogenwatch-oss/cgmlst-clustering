@@ -9,6 +9,7 @@ test:
     - npm install bson
     - node createTestData.js
     - cd ..
+    - ./bin/git-config.sh "gitlab-ci-token:$CI_JOB_TOKEN"
     - go get gitlab.com/cgps/bsonkit
     - go test
   cache:
@@ -20,12 +21,13 @@ deploy:
   stage: deploy
   script:
     - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
-    - docker build \
-        --pull \
-        --build-arg http_proxy=$http_proxy \
-        --build-arg https_proxy=$https_proxy \
-        --build-arg ftp_proxy=$https_proxy \
-        -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG" .
-    - docker push "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG"
+    - docker build
+        --pull
+        --build-arg http_proxy=$http_proxy
+        --build-arg https_proxy=$https_proxy
+        --build-arg ftp_proxy=$https_proxy
+        --build-arg git_credentials="gitlab-ci-token:$CI_JOB_TOKEN"
+        -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME" .
+    - docker push "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME"
   only:
     - tags

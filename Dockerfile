@@ -1,6 +1,7 @@
 FROM golang:1.9-alpine as go
 
-RUN apk add --update git
+ARG git_credentials
+RUN apk add --update git && ./bin/git-config.sh $git_credentials
 RUN go get gitlab.com/cgps/bsonkit
 
 COPY *.go /tmp/clustering/
