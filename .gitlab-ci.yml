@@ -4,9 +4,9 @@ test:
   stage: test
   image: golang:1.9-alpine
   script:
-    - apk add --update --repository http://dl-3.alpinelinux.org/alpine/edge/main nodejs nodejs-npm git
-    - cd testdata
+    - apk add --update --repository http://dl-3.alpinelinux.org/alpine/edge/main nodejs nodejs-npm git bash
     - npm install bson
+    - cd testdata
     - node createTestData.js
     - cd ..
     - ./bin/git-config.sh "gitlab-ci-token:$CI_JOB_TOKEN"
@@ -15,7 +15,7 @@ test:
   cache:
     untracked: true
     paths:
-      - testdata/node_modules/
+      - node_modules/
 
 deploy:
   stage: deploy
