@@ -9,3 +9,5 @@ if [[ ! -z $CREDENTIALS ]] ; then
 else
   echo No git credentials provided.
 fi
+
+go get gitlab.com/cgps/bsonkit

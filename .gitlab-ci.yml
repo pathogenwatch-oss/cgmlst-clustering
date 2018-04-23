@@ -9,8 +9,7 @@ test:
     - cd testdata
     - node createTestData.js
     - cd ..
-    - ./bin/git-config.sh "gitlab-ci-token:$CI_JOB_TOKEN"
-    - go get gitlab.com/cgps/bsonkit
+    - ./bin/go-get.sh "gitlab-ci-token:$CI_JOB_TOKEN"
     - go test
   cache:
     untracked: true
