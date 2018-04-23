@@ -4,7 +4,7 @@ test:
   stage: test
   image: golang:1.9-alpine
   script:
-    - apk add --update nodejs nodejs-npm
+    - apk add --update --repository http://dl-3.alpinelinux.org/alpine/edge/main nodejs nodejs-npm
     - cd testdata
     - npm install bson
     - node createTestData.js
