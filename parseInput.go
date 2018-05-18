@@ -201,18 +201,28 @@ func (s scoresStore) Distances() ([]int, error) {
 	return distances, nil
 }
 
-func parseGenomeDoc(doc *bsonkit.Document) (STs []CgmlstSt, IDs []GenomeSTPair, err error) {
+func parseGenomeDoc(doc *bsonkit.Document) (STs []CgmlstSt, IDs []GenomeSTPair, thresholds []int, err error) {
 	IDs = make([]GenomeSTPair, 0, 100)
 	STs = make([]string, 0, 100)
+	thresholds = make([]int, 0, 10)
+
 	seenSTs := make(map[CgmlstSt]bool)
 	d := new(bsonkit.Document)
 	genomes := new(bsonkit.Document)
+	thresholdsDoc := new(bsonkit.Document)
+	var foundGenomes, foundThresholds bool
 
 	doc.Seek(0)
 	for doc.Next() {
 		if string(doc.Key()) == "genomes" {
 			err = doc.Value(genomes)
-			break
+			foundGenomes = true
+		} else if string(doc.Key()) == "thresholds" {
+			err = doc.Value(thresholdsDoc)
+			foundThresholds = true
+		}
+		if err != nil {
+			return
 		}
 	}
 	if doc.Err != nil {
@@ -220,8 +230,11 @@ func parseGenomeDoc(doc *bsonkit.Document) (STs []CgmlstSt, IDs []GenomeSTPair, 
 		return
 	} else if err != nil {
 		return
-	} else if string(doc.Key()) != "genomes" {
-		err = errors.New("Not a genomes document")
+	} else if !foundGenomes {
+		err = errors.New("Expected genome field in document")
+		return
+	} else if !foundThresholds {
+		err = errors.New("Expected thresholds field in document")
 		return
 	}
 
@@ -268,6 +281,22 @@ func parseGenomeDoc(doc *bsonkit.Document) (STs []CgmlstSt, IDs []GenomeSTPair, 
 
 	if genomes.Err != nil {
 		err = genomes.Err
+		return
+	}
+
+	for thresholdsDoc.Next() {
+		var threshold int32
+		if err = thresholdsDoc.Value(&threshold); err != nil {
+			return
+		}
+
+		thresholds = append(thresholds, int(threshold))
+	}
+
+	if thresholdsDoc.Err != nil {
+		err = thresholdsDoc.Err
+	} else if len(thresholds) == 0 {
+		err = errors.New("Expected at least one threshold")
 	}
 
 	return
@@ -395,7 +424,7 @@ type GenomeSTPair struct {
 	ST CgmlstSt
 }
 
-func parse(r io.Reader) (STs []CgmlstSt, IDs []GenomeSTPair, profiles ProfileStore, scores scoresStore, err error) {
+func parse(r io.Reader) (STs []CgmlstSt, IDs []GenomeSTPair, profiles ProfileStore, scores scoresStore, thresholds []int, err error) {
 	err = nil
 	errChan := make(chan error)
 	numWorkers := 5
@@ -426,7 +455,7 @@ func parse(r io.Reader) (STs []CgmlstSt, IDs []GenomeSTPair, profiles ProfileSto
 	for firstDoc.Next() {
 		switch string(firstDoc.Key()) {
 		case "genomes":
-			STs, IDs, err = parseGenomeDoc(firstDoc)
+			STs, IDs, thresholds, err = parseGenomeDoc(firstDoc)
 			if err != nil {
 				return
 			}

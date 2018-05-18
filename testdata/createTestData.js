@@ -145,7 +145,7 @@ async function appendScores(data, scoresFile) {
 async function main() {
   // Make some fake profiles
   nProfiles = 7000
-  genomes = { genomes: []}
+  genomes = { genomes: [], thresholds: [5, 50, 200, 500]}
   for (let i = 0; i < nProfiles; i++) {
     id = objectId(i)
     genomes.genomes.push({
@@ -167,12 +167,12 @@ async function main() {
   profiles = fakeProfiles(nProfiles)
   assert.equal(random(), 0.19474356789214653)
   // If this assertion passes, the test data should be consistent
-  // MD5 (FakeProfiles.bson) = d6d5995ad3802177871a76cf59595620
-  // MD5 (FakePublicProfiles.bson) = ecd6c6358ba5943d38887323141d6fed
+  // MD5 (FakeProfiles.bson) = 71fbd0dab8be0afddadc3506d49caf70
+  // MD5 (FakePublicProfiles.bson) = a0484af3ecc1d8c3d0321786c125cf08
   dumpBson("FakeProfiles.bson", profiles, true)
 
   // Just the public profiles
-  genomes = { genomes: []}
+  genomes = { genomes: [], thresholds: [5, 50, 200, 500]}
   fakeData = [genomes]
   for (let i = 0; i < profiles.length; i++) {
     profile = profiles[i]
@@ -193,24 +193,43 @@ async function main() {
         { "_id": new BSON.ObjectID(1), "st": "abc" },
         { "_id": new BSON.ObjectID(2), "st": "def" },
         { "_id": new BSON.ObjectID(3), "st": "ghi" }
-      ]
+      ],
+      thresholds: [5, 50]
     },
     {
       genomes: [
         { "_id": new BSON.ObjectID(4), "st": "abc" },
         { "_id": new BSON.ObjectID(5), "st": "abc" },
         { "_id": new BSON.ObjectID(6), "st": "ghi" }
-      ]
+      ],
+      thresholds: [5, 50]
     },
     {
       genomes: [
         { "wrong": "abc" },
-      ]
+      ],
+      thresholds: [5, 50]
     },
     {
       wrong: [
         { "_id": new BSON.ObjectID(7), "st": "abc" },
+      ],
+      thresholds: [5, 50]
+    },
+    {
+      genomes: [
+        { "_id": new BSON.ObjectID(1), "st": "abc" },
+        { "_id": new BSON.ObjectID(2), "st": "def" },
+        { "_id": new BSON.ObjectID(3), "st": "ghi" }
       ]
+    },
+    {
+      genomes: [
+        { "_id": new BSON.ObjectID(1), "st": "abc" },
+        { "_id": new BSON.ObjectID(2), "st": "def" },
+        { "_id": new BSON.ObjectID(3), "st": "ghi" }
+      ],
+      thresholds: []
     }
   ])
 
@@ -250,7 +269,8 @@ async function main() {
         { _id: new BSON.ObjectID(2), st: "def" },
         { _id: new BSON.ObjectID(3), st: "ghi" },
         { _id: new BSON.ObjectID(4), st: "jkl" }
-      ]
+      ],
+      thresholds: [5, 50, 200, 500]
     },
     {
       st: "abc",

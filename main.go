@@ -10,17 +10,12 @@ import (
 	"gitlab.com/cgps/bsonkit"
 )
 
-var thresholds = map[string][]int{
-	"1280": {5, 50, 200, 500},
-}
-
 type ClusterDetails struct {
 	Genome  bsonkit.ObjectID `json:"genome"`
 	Cluster bsonkit.ObjectID `json:"cluster"`
 }
 
 type ClusterOutput struct {
-	Taxid     string           `json:"taxid"`
 	Threshold int              `json:"threshold"`
 	Genomes   []ClusterDetails `json:"genomes"`
 }
@@ -85,7 +80,7 @@ func mapGenomeToCluster(threshold int, c Clusters, STs []CgmlstSt, IDs []GenomeS
 
 func main() {
 	r := (io.Reader)(os.Stdin)
-	STs, IDs, profiles, scores, err := parse(r)
+	STs, IDs, profiles, scores, thresholds, err := parse(r)
 	if err != nil {
 		panic(err)
 	}
@@ -104,15 +99,12 @@ func main() {
 		panic(err)
 	}
 
-	// TODO: HARDCODED
-	taxid := "1280"
 	clusters, err := NewClusters(len(scores.STs), distances)
 	if err != nil {
 		panic(err)
 	}
-	for _, threshold := range thresholds[taxid] {
+	for _, threshold := range thresholds {
 		details := ClusterOutput{
-			Taxid:     taxid,
 			Threshold: threshold,
 			Genomes:   mapGenomeToCluster(threshold, clusters, STs, IDs),
 		}

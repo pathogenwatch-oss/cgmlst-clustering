@@ -200,7 +200,7 @@ func TestScoreAllFakeData(t *testing.T) {
 		t.Fatal("Couldn't load test data")
 	}
 
-	_, _, profiles, scores, err := parse(testFile)
+	_, _, profiles, scores, _, err := parse(testFile)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"reflect"
 	"testing"
 
 	"gitlab.com/cgps/bsonkit"
@@ -21,18 +22,18 @@ func TestParseGenomeDoc(t *testing.T) {
 	}
 	doc := docs.Doc
 
-	if STs, IDs, err := parseGenomeDoc(doc); err != nil {
+	if STs, IDs, thresholds, err := parseGenomeDoc(doc); err != nil {
 		t.Fatal(err)
 	} else if len(STs) != 3 {
 		t.Fatal("Expected 3 STs got", STs)
 	} else if len(IDs) != 3 {
 		t.Fatal("Expected 2 STs")
+	} else if !reflect.DeepEqual(thresholds, []int{5, 50}) {
+		t.Fatalf("Expected %v got %v\n", []int{5, 50}, thresholds)
 	} else {
 		expected := []string{"abc", "def", "ghi"}
-		for i, ST := range STs {
-			if ST != expected[i] {
-				t.Fatalf("%d: got %s, expected %s\n", i, ST, expected[i])
-			}
+		if !reflect.DeepEqual(STs, expected) {
+			t.Fatalf("Expected %v got %v\n", expected, STs)
 		}
 		for i, ID := range IDs {
 			if ID.ST != expected[i] {
@@ -48,18 +49,18 @@ func TestParseGenomeDoc(t *testing.T) {
 	}
 	doc = docs.Doc
 
-	if STs, IDs, err := parseGenomeDoc(doc); err != nil {
+	if STs, IDs, thresholds, err := parseGenomeDoc(doc); err != nil {
 		t.Fatal(err)
 	} else if len(STs) != 2 {
 		t.Fatal("Expected 2 STs")
 	} else if len(IDs) != 3 {
 		t.Fatal("Expected 2 STs")
+	} else if !reflect.DeepEqual(thresholds, []int{5, 50}) {
+		t.Fatalf("Expected %v got %v\n", []int{5, 50}, thresholds)
 	} else {
 		expected := []string{"abc", "ghi"}
-		for i, ST := range STs {
-			if ST != expected[i] {
-				t.Fatalf("%d: got %s, expected %s\n", i, ST, expected[i])
-			}
+		if !reflect.DeepEqual(STs, expected) {
+			t.Fatalf("Expected %v got %v\n", expected, STs)
 		}
 		expected = []string{"abc", "abc", "ghi"}
 		for i, ID := range IDs {
@@ -76,8 +77,8 @@ func TestParseGenomeDoc(t *testing.T) {
 	}
 	doc = docs.Doc
 
-	if _, _, err := parseGenomeDoc(doc); err == nil {
-		t.Fatal("Should have thrown an error")
+	if _, _, _, err := parseGenomeDoc(doc); err == nil {
+		t.Fatal("This doesn't have a ST. Should have thrown an error")
 	}
 
 	// This isn't a genomes document
@@ -87,8 +88,34 @@ func TestParseGenomeDoc(t *testing.T) {
 	}
 	doc = docs.Doc
 
-	if _, _, err := parseGenomeDoc(doc); err == nil {
-		t.Fatal("Should have thrown an error")
+	if _, _, _, err := parseGenomeDoc(doc); err == nil {
+		t.Fatal("This isn't a genomes document. Should have thrown an error")
+	}
+
+	// Doesn't have a thresholds key
+	docs.Next()
+	if docs.Err != nil {
+		t.Fatal(docs.Err)
+	}
+	doc = docs.Doc
+
+	if _, _, _, err := parseGenomeDoc(doc); err == nil {
+		t.Fatal("Doesn't have a thresholds key. Should have thrown an error")
+	}
+
+	// Thresholds are empty
+	docs.Next()
+	if docs.Err != nil {
+		t.Fatal(docs.Err)
+	}
+	doc = docs.Doc
+
+	if _, _, _, err := parseGenomeDoc(doc); err == nil {
+		t.Fatal("Thresholds are empty. Should have thrown an error")
+	}
+
+	if docs.Next() {
+		t.Fatal("Unexpected extra document")
 	}
 }
 
@@ -185,7 +212,7 @@ func TestParse(t *testing.T) {
 	if err != nil {
 		t.Fatal("Couldn't load test data")
 	}
-	STs, IDs, profiles, scores, err := parse(testFile)
+	STs, IDs, profiles, scores, thresholds, err := parse(testFile)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,6 +234,10 @@ func TestParse(t *testing.T) {
 	if len(scores.scores) != 6 {
 		t.Fatal("Expected 6 scores")
 	}
+	expectedThresholds := []int{5, 50, 200, 500}
+	if !reflect.DeepEqual(expectedThresholds, thresholds) {
+		t.Fatalf("Expected thresholds %v, got %v", expectedThresholds, thresholds)
+	}
 }
 
 func TestAllParse(t *testing.T) {
@@ -215,7 +246,7 @@ func TestAllParse(t *testing.T) {
 	if err != nil {
 		t.Fatal("Couldn't load test data")
 	}
-	STs, _, profiles, scores, err := parse(testFile)
+	STs, _, profiles, scores, thresholds, err := parse(testFile)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -234,6 +265,10 @@ func TestAllParse(t *testing.T) {
 	}
 	if actual, expected := len(scores.scores), nSTs*(nSTs-1)/2; actual != expected {
 		t.Fatalf("Expected %d scores, got %d\n", expected, actual)
+	}
+	expectedThresholds := []int{5, 50, 200, 500}
+	if !reflect.DeepEqual(expectedThresholds, thresholds) {
+		t.Fatalf("Expected thresholds %v, got %v", expectedThresholds, thresholds)
 	}
 }
 
