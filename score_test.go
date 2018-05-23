@@ -156,7 +156,11 @@ func TestScoreAll(t *testing.T) {
 		profiles.Add(p)
 	}
 
-	_, _, scoreComplete, errChan := scoreAll(scores, profiles)
+	progress, _, scoreComplete, errChan := scoreAll(scores, profiles)
+	go func() {
+		for range progress {
+		}
+	}()
 	select {
 	case err := <-errChan:
 		if err != nil {
@@ -210,7 +214,11 @@ func TestScoreAllFakeData(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, _, scoreComplete, errChan := scoreAll(scores, profiles)
+	progress, _, scoreComplete, errChan := scoreAll(scores, profiles)
+	go func() {
+		for range progress {
+		}
+	}()
 	select {
 	case err := <-errChan:
 		if err != nil {
