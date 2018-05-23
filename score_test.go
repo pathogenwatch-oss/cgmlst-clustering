@@ -156,8 +156,13 @@ func TestScoreAll(t *testing.T) {
 		profiles.Add(p)
 	}
 
-	if err := scoreAll(scores, profiles); err != nil {
-		t.Fatal(err)
+	_, _, scoreComplete, errChan := scoreAll(scores, profiles)
+	select {
+	case err := <-errChan:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-scoreComplete:
 	}
 
 	nSTs := len(scores.STs)
@@ -205,8 +210,13 @@ func TestScoreAllFakeData(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := scoreAll(scores, profiles); err != nil {
-		t.Fatal(err)
+	_, _, scoreComplete, errChan := scoreAll(scores, profiles)
+	select {
+	case err := <-errChan:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-scoreComplete:
 	}
 
 	nSTs := len(scores.STs)
