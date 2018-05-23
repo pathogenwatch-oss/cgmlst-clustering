@@ -85,11 +85,23 @@ func main() {
 		panic(err)
 	}
 
-	if err := scoreAll(scores, profiles); err != nil {
-		panic(err)
+	enc := json.NewEncoder(os.Stdout)
+	progressEvents, expectedScoreEvents, scoreComplete, errChan := scoreAll(scores, profiles)
+	progressMessages := UpdateProgress(expectedScoreEvents+len(thresholds), progressEvents)
+	go func() {
+		for p := range progressMessages {
+			enc.Encode(p)
+		}
+	}()
+
+	select {
+	case err := <-errChan:
+		if err != nil {
+			panic(err)
+		}
+	case <-scoreComplete:
 	}
 
-	enc := json.NewEncoder(os.Stdout)
 	for c := range buildCacheOutputs(scores) {
 		enc.Encode(c)
 	}
@@ -108,6 +120,7 @@ func main() {
 			Threshold: threshold,
 			Genomes:   mapGenomeToCluster(threshold, clusters, STs, IDs),
 		}
+		progressEvents <- true
 		enc.Encode(details)
 	}
 

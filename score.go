@@ -227,48 +227,77 @@ func buildCacheOutputs(scores scoresStore) chan CacheOutput {
 	return outputChan
 }
 
-func scoreAll(scores scoresStore, profiles ProfileStore) error {
+func estimateScoreTasks(scores scoresStore) int {
+	var tasks, idx int
+	toIndex := make(map[int]bool)
+	for i := 1; i < len(scores.STs); i++ {
+		for j := 0; j < i; j++ {
+			if scores.scores[idx].status == PENDING {
+				tasks++ // A score task
+				toIndex[i] = true
+				toIndex[j] = true
+			}
+			idx++
+		}
+	}
+	tasks += len(toIndex) // Add the profile indexing tasks
+	return tasks
+}
+
+func scoreAll(scores scoresStore, profiles ProfileStore) (progressEvents chan bool, expectedEvents int, done chan bool, err chan error) {
 	numWorkers := 10
 	indexer := NewIndexer()
-	var wg sync.WaitGroup
+	var indexWg, scoreWg sync.WaitGroup
 
-	errChan := make(chan error)
-	profilesChan := toIndex(profiles, scores, errChan)
+	progressEvents = make(chan bool, 100)
+	expectedEvents = estimateScoreTasks(scores)
+	err = make(chan error)
+	done = make(chan bool)
 
-	for i := 1; i <= numWorkers; i++ {
-		wg.Add(1)
-		go indexProfiles(i, profilesChan, indexer, &wg)
-	}
-
-	wg.Wait()
-
-	jobs := make(chan int, 50)
+	_profilesChan := toIndex(profiles, scores, err)
+	profilesChan := make(chan Profile)
 	go func() {
-		for idx, score := range scores.scores {
-			if score.status == PENDING {
-				jobs <- idx
-			}
+		for profile := range _profilesChan {
+			profilesChan <- profile
+			progressEvents <- true
 		}
-		close(jobs)
+		close(profilesChan)
+	}()
+
+	_scoreTasks := make(chan int, 50)
+	scoreTasks := make(chan int)
+	go func() {
+		for task := range _scoreTasks {
+			scoreTasks <- task
+			progressEvents <- true
+		}
+		close(scoreTasks)
 	}()
 
 	for i := 1; i <= numWorkers; i++ {
-		wg.Add(1)
-		go scoreProfiles(i, jobs, &scores, Comparer{lookup: indexer.lookup}, &wg)
+		indexWg.Add(1)
+		go indexProfiles(i, profilesChan, indexer, &indexWg)
 	}
 
-	done := make(chan bool)
 	go func() {
-		wg.Wait()
+		indexWg.Wait()
+		for idx, score := range scores.scores {
+			if score.status == PENDING {
+				_scoreTasks <- idx
+			}
+		}
+		close(_scoreTasks)
+	}()
+
+	for i := 1; i <= numWorkers; i++ {
+		scoreWg.Add(1)
+		go scoreProfiles(i, scoreTasks, &scores, Comparer{lookup: indexer.lookup}, &scoreWg)
+	}
+
+	go func() {
+		scoreWg.Wait()
 		done <- true
 	}()
 
-	select {
-	case err := <-errChan:
-		if err != nil {
-			return err
-		}
-	case <-done:
-	}
-	return nil
+	return
 }
