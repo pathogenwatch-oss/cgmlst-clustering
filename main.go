@@ -20,6 +20,12 @@ type ClusterOutput struct {
 	Genomes   []ClusterDetails `json:"genomes"`
 }
 
+type ClusterIndex struct {
+	Pi     []int    `json:"pi"`
+	Lambda []int    `json:"lambda"`
+	Sts    []string `json:"sts"`
+}
+
 func isSmaller(a, b bsonkit.ObjectID) bool {
 	return bytes.Compare(a[:], b[:]) < 0
 }
@@ -115,6 +121,13 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+
+	enc.Encode(ClusterIndex{
+		clusters.pi,
+		clusters.lambda,
+		scores.STs,
+	})
+
 	for _, threshold := range thresholds {
 		details := ClusterOutput{
 			Threshold: threshold,
