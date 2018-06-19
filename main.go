@@ -21,9 +21,10 @@ type ClusterOutput struct {
 }
 
 type ClusterIndex struct {
-	Pi     []int    `json:"pi"`
-	Lambda []int    `json:"lambda"`
-	Sts    []string `json:"sts"`
+	Pi        []int    `json:"pi"`
+	Lambda    []int    `json:"lambda"`
+	Sts       []string `json:"sts"`
+	Distances []int    `json:"distances"`
 }
 
 func isSmaller(a, b bsonkit.ObjectID) bool {
@@ -126,6 +127,7 @@ func main() {
 		clusters.pi,
 		clusters.lambda,
 		scores.STs,
+		distances,
 	})
 
 	for _, threshold := range thresholds {
