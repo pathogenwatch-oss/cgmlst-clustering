@@ -87,19 +87,16 @@ func mapGenomeToCluster(threshold int, c Clusters, STs []CgmlstSt, IDs []GenomeS
 
 func main() {
 	r := (io.Reader)(os.Stdin)
-	STs, IDs, profiles, scores, thresholds, err := parse(r)
+	enc := json.NewEncoder(os.Stdout)
+	progress := ProgressWorker(enc)
+	defer func() { progress <- ProgressEvent{EXIT, 0} }()
+
+	STs, IDs, profiles, scores, thresholds, err := parse(r, progress)
 	if err != nil {
 		panic(err)
 	}
 
-	enc := json.NewEncoder(os.Stdout)
-	progressEvents, expectedScoreEvents, scoreComplete, errChan := scoreAll(scores, profiles)
-	progressMessages := UpdateProgress(expectedScoreEvents+len(thresholds), progressEvents)
-	go func() {
-		for p := range progressMessages {
-			enc.Encode(p)
-		}
-	}()
+	scoreComplete, errChan := scoreAll(scores, profiles, progress)
 
 	select {
 	case err := <-errChan:
@@ -111,13 +108,17 @@ func main() {
 
 	for c := range buildCacheOutputs(scores) {
 		enc.Encode(c)
+		progress <- ProgressEvent{CACHED_RESULT, 1}
 	}
 
+	progress <- ProgressEvent{DISTANCES_STARTED, 0}
 	distances, err := scores.Distances()
 	if err != nil {
 		panic(err)
 	}
+	progress <- ProgressEvent{DISTANCES_COMPLETE, 0}
 
+	progress <- ProgressEvent{CLUSTERING_STARTED, 0}
 	clusters, err := NewClusters(len(scores.STs), distances)
 	if err != nil {
 		panic(err)
@@ -135,7 +136,6 @@ func main() {
 			Threshold: threshold,
 			Genomes:   mapGenomeToCluster(threshold, clusters, STs, IDs),
 		}
-		progressEvents <- true
 		enc.Encode(details)
 	}
 

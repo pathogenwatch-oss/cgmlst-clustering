@@ -424,7 +424,9 @@ type GenomeSTPair struct {
 	ST CgmlstSt
 }
 
-func parse(r io.Reader) (STs []CgmlstSt, IDs []GenomeSTPair, profiles ProfileStore, scores scoresStore, thresholds []int, err error) {
+func parse(r io.Reader, progress chan ProgressEvent) (STs []CgmlstSt, IDs []GenomeSTPair, profiles ProfileStore, scores scoresStore, thresholds []int, err error) {
+	progress <- ProgressEvent{PARSING_STARTED, 0}
+	defer func() { progress <- ProgressEvent{PARSING_COMPLETE, 0} }()
 	err = nil
 	errChan := make(chan error)
 	numWorkers := 5
@@ -473,6 +475,7 @@ func parse(r io.Reader) (STs []CgmlstSt, IDs []GenomeSTPair, profiles ProfileSto
 	}
 
 	log.Printf("Found %d STs\n", len(STs))
+	progress <- ProgressEvent{PROFILES_EXPECTED, len(STs)}
 
 	scores = NewScores(STs)
 	profiles = NewProfileStore(&scores)
@@ -500,6 +503,7 @@ func parse(r io.Reader) (STs []CgmlstSt, IDs []GenomeSTPair, profiles ProfileSto
 						errChan <- err
 						return
 					}
+					progress <- ProgressEvent{PROFILE_PARSED, 1}
 					break
 				}
 			}

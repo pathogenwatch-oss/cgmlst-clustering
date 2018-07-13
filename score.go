@@ -244,13 +244,11 @@ func estimateScoreTasks(scores scoresStore) int {
 	return tasks
 }
 
-func scoreAll(scores scoresStore, profiles ProfileStore) (progressEvents chan bool, expectedEvents int, done chan bool, err chan error) {
+func scoreAll(scores scoresStore, profiles ProfileStore, progress chan ProgressEvent) (done chan bool, err chan error) {
 	numWorkers := 10
 	indexer := NewIndexer()
 	var indexWg, scoreWg sync.WaitGroup
 
-	progressEvents = make(chan bool, 100)
-	expectedEvents = estimateScoreTasks(scores)
 	err = make(chan error)
 	done = make(chan bool)
 
@@ -259,7 +257,7 @@ func scoreAll(scores scoresStore, profiles ProfileStore) (progressEvents chan bo
 	go func() {
 		for profile := range _profilesChan {
 			profilesChan <- profile
-			progressEvents <- true
+			progress <- ProgressEvent{PROFILE_INDEXED, 1}
 		}
 		close(profilesChan)
 	}()
@@ -269,7 +267,7 @@ func scoreAll(scores scoresStore, profiles ProfileStore) (progressEvents chan bo
 	go func() {
 		for task := range _scoreTasks {
 			scoreTasks <- task
-			progressEvents <- true
+			progress <- ProgressEvent{SCORE_UPDATED, 1}
 		}
 		close(scoreTasks)
 	}()
@@ -284,6 +282,8 @@ func scoreAll(scores scoresStore, profiles ProfileStore) (progressEvents chan bo
 		for idx, score := range scores.scores {
 			if score.status == PENDING {
 				_scoreTasks <- idx
+			} else {
+				progress <- ProgressEvent{SCORE_UPDATED, 1}
 			}
 		}
 		close(_scoreTasks)
@@ -296,6 +296,7 @@ func scoreAll(scores scoresStore, profiles ProfileStore) (progressEvents chan bo
 
 	go func() {
 		scoreWg.Wait()
+		progress <- ProgressEvent{SCORING_COMPLETE, 0}
 		done <- true
 	}()
 

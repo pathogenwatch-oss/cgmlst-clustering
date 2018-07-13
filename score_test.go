@@ -156,11 +156,7 @@ func TestScoreAll(t *testing.T) {
 		profiles.Add(p)
 	}
 
-	progress, _, scoreComplete, errChan := scoreAll(scores, profiles)
-	go func() {
-		for range progress {
-		}
-	}()
+	scoreComplete, errChan := scoreAll(scores, profiles, SinkHole())
 	select {
 	case err := <-errChan:
 		if err != nil {
@@ -209,16 +205,12 @@ func TestScoreAllFakeData(t *testing.T) {
 		t.Fatal("Couldn't load test data")
 	}
 
-	_, _, profiles, scores, _, err := parse(testFile)
+	_, _, profiles, scores, _, err := parse(testFile, SinkHole())
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	progress, _, scoreComplete, errChan := scoreAll(scores, profiles)
-	go func() {
-		for range progress {
-		}
-	}()
+	scoreComplete, errChan := scoreAll(scores, profiles, SinkHole())
 	select {
 	case err := <-errChan:
 		if err != nil {

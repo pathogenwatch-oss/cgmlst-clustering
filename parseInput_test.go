@@ -207,12 +207,21 @@ func TestParseProfile(t *testing.T) {
 	}
 }
 
+func SinkHole() chan ProgressEvent {
+	hole := make(chan ProgressEvent)
+	go func() {
+		for range hole {
+		}
+	}()
+	return hole
+}
+
 func TestParse(t *testing.T) {
 	testFile, err := os.Open("testdata/TestParse.bson")
 	if err != nil {
 		t.Fatal("Couldn't load test data")
 	}
-	STs, IDs, profiles, scores, thresholds, err := parse(testFile)
+	STs, IDs, profiles, scores, thresholds, err := parse(testFile, SinkHole())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,7 +255,7 @@ func TestAllParse(t *testing.T) {
 	if err != nil {
 		t.Fatal("Couldn't load test data")
 	}
-	STs, _, profiles, scores, thresholds, err := parse(testFile)
+	STs, _, profiles, scores, thresholds, err := parse(testFile, SinkHole())
 	if err != nil {
 		t.Fatal(err)
 	}
