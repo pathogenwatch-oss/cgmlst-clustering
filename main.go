@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"time"
 
 	"gitlab.com/cgps/bsonkit"
 )
@@ -21,10 +22,9 @@ type ClusterOutput struct {
 }
 
 type ClusterIndex struct {
-	Pi        []int    `json:"pi"`
-	Lambda    []int    `json:"lambda"`
-	Sts       []string `json:"sts"`
-	Distances []int    `json:"distances"`
+	Pi     []int    `json:"pi"`
+	Lambda []int    `json:"lambda"`
+	Sts    []string `json:"sts"`
 }
 
 func isSmaller(a, b bsonkit.ObjectID) bool {
@@ -91,20 +91,33 @@ func main() {
 	progress := ProgressWorker(enc)
 	defer func() { progress <- ProgressEvent{EXIT, 0} }()
 
-	STs, IDs, profiles, scores, thresholds, err := parse(r, progress)
+	STs, _, profiles, scores, _, err := parse(r, progress)
 	if err != nil {
 		panic(err)
 	}
 
 	cacheDocs := make(chan CacheOutput, 1000)
+	cacheFinished := make(chan bool, 2)
 	go func() {
-		for doc := range cacheDocs {
+		for {
+			doc, more := <-cacheDocs
+			if !more {
+				cacheFinished <- true
+				return
+			}
 			enc.Encode(doc)
 			progress <- ProgressEvent{CACHED_RESULT, 1}
 		}
 	}()
 
 	scoreCache := MakeScoreCacher(&scores, cacheDocs)
+	tick := time.Tick(time.Second)
+	go func() {
+		for {
+			<-tick
+			log.Printf("%d scores remaining\n", scoreCache.Remaining())
+		}
+	}()
 	scoreComplete, errChan := scoreAll(scores, profiles, progress, scoreCache)
 
 	select {
@@ -132,18 +145,10 @@ func main() {
 		clusters.pi,
 		clusters.lambda,
 		scores.STs,
-		distances,
 	})
 
-	for _, threshold := range thresholds {
-		details := ClusterOutput{
-			Threshold: threshold,
-			Genomes:   mapGenomeToCluster(threshold, clusters, STs, IDs),
-		}
-		enc.Encode(details)
-	}
+	<-cacheFinished
 
-	scoreCache.Wait()
-
+	log.Printf("%d scores remaining\n", scoreCache.Remaining())
 	log.Printf("STs: %d; Scores: %d\n", len(STs), len(scores.scores))
 }

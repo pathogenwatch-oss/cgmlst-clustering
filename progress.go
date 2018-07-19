@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"time"
 )
 
 const (
@@ -32,24 +33,24 @@ type ProgressMessage struct {
 
 func ProgressWorker(output *json.Encoder) (input chan ProgressEvent) {
 	input = make(chan ProgressEvent, 1000)
+	var (
+		progress         float32
+		parsingStep      float32
+		indexingStep     float32
+		scoringStep      float32
+		cachingStep      float32
+		nextUpdate       float32
+		parsingMessages  int
+		scoringMessages  int
+		indexingMessages int
+		cachingMessages  int
+		other            int
+		nScores          float32
+		nSts             float32
+		message          string
+	)
 
 	go func() {
-		var (
-			progress         float32
-			parsingStep      float32
-			indexingStep     float32
-			scoringStep      float32
-			cachingStep      float32
-			nextUpdate       float32
-			parsingMessages  int
-			scoringMessages  int
-			indexingMessages int
-			cachingMessages  int
-			other            int
-			nScores          float32
-			nSts             float32
-			message          string
-		)
 		message = "Loading data"
 
 		for msg := range input {
@@ -111,6 +112,14 @@ func ProgressWorker(output *json.Encoder) (input chan ProgressEvent) {
 				other++
 			default:
 			}
+		}
+	}()
+
+	tick := time.Tick(time.Second)
+
+	go func() {
+		for {
+			<-tick
 			// This looks stupid (and it is) but I had to do this because of floating point arithmetic
 			// If you have 7000 sequences, there are a lot of scores.  The step for each score gets
 			// really small.  Once the progress gets to about 64, adding a really small number to it
@@ -119,7 +128,7 @@ func ProgressWorker(output *json.Encoder) (input chan ProgressEvent) {
 			progress = float32(other) + parsingStep*float32(parsingMessages) + indexingStep*float32(indexingMessages) + scoringStep*float32(scoringMessages) + cachingStep*float32(cachingMessages)
 			if progress > nextUpdate {
 				output.Encode(ProgressMessage{progress, message})
-				nextUpdate = progress + 1
+				nextUpdate = progress + 0.1
 			}
 		}
 	}()

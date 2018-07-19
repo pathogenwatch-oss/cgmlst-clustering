@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"sync/atomic"
 )
 
 type Index struct {
@@ -114,7 +115,7 @@ func (c *Comparer) compare(stA string, stB string) int {
 	return geneCount - alleleCount
 }
 
-func scoreProfiles(workerID int, jobs chan int, scores *scoresStore, comparer Comparer, wg *sync.WaitGroup, sc scoreCacher) {
+func scoreProfiles(workerID int, jobs chan int, scores *scoresStore, comparer Comparer, wg *sync.WaitGroup, sc *scoreCacher) {
 	nScores := 0
 	defer func() {
 		log.Printf("Worker %d has computed %d scores", workerID, nScores)
@@ -203,22 +204,16 @@ type CacheOutput struct {
 }
 
 type scoreCacher struct {
-	scoresTodo []int
-	scores     *scoresStore
-	output     chan CacheOutput
-	finished   bool
-	wg         *sync.WaitGroup
+	stScoresCompleted []int32
+	scores            *scoresStore
+	output            chan CacheOutput
+	finished          bool
 }
 
 func MakeScoreCacher(scores *scoresStore, output chan CacheOutput) scoreCacher {
 	nSts := len(scores.STs)
-	scoresTodo := make([]int, nSts)
-	for i := 0; i < nSts; i++ {
-		scoresTodo[i] = i
-	}
-	var wg sync.WaitGroup
-	wg.Add(1)
-	return scoreCacher{scoresTodo, scores, output, false, &wg}
+	stScoresCompleted := make([]int32, nSts)
+	return scoreCacher{stScoresCompleted, scores, output, false}
 }
 
 func (s *scoreCacher) Done(st CgmlstSt) {
@@ -226,8 +221,8 @@ func (s *scoreCacher) Done(st CgmlstSt) {
 	if !ok {
 		return
 	}
-	s.scoresTodo[idx]--
-	if s.scoresTodo[idx] == 0 {
+	count := atomic.AddInt32(&s.stScoresCompleted[idx], 1)
+	if count == int32(idx) {
 		s.cache(idx)
 	}
 }
@@ -250,12 +245,15 @@ func (s *scoreCacher) Close() {
 	if !s.finished {
 		close(s.output)
 		s.finished = true
-		s.wg.Done()
 	}
 }
 
-func (s *scoreCacher) Wait() {
-	s.wg.Wait()
+func (s *scoreCacher) Remaining() int {
+	var count int
+	for idx, n := range s.stScoresCompleted {
+		count += (idx - int(n))
+	}
+	return count
 }
 
 func estimateScoreTasks(scores scoresStore) int {
@@ -323,7 +321,7 @@ func scoreAll(scores scoresStore, profiles ProfileStore, progress chan ProgressE
 
 	for i := 1; i <= numWorkers; i++ {
 		scoreWg.Add(1)
-		go scoreProfiles(i, scoreTasks, &scores, Comparer{lookup: indexer.lookup}, &scoreWg, sc)
+		go scoreProfiles(i, scoreTasks, &scores, Comparer{lookup: indexer.lookup}, &scoreWg, &sc)
 	}
 
 	go func() {
