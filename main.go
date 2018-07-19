@@ -96,7 +96,16 @@ func main() {
 		panic(err)
 	}
 
-	scoreComplete, errChan := scoreAll(scores, profiles, progress)
+	cacheDocs := make(chan CacheOutput, 1000)
+	go func() {
+		for doc := range cacheDocs {
+			enc.Encode(doc)
+			progress <- ProgressEvent{CACHED_RESULT, 1}
+		}
+	}()
+
+	scoreCache := MakeScoreCacher(&scores, cacheDocs)
+	scoreComplete, errChan := scoreAll(scores, profiles, progress, scoreCache)
 
 	select {
 	case err := <-errChan:
@@ -104,11 +113,6 @@ func main() {
 			panic(err)
 		}
 	case <-scoreComplete:
-	}
-
-	for c := range buildCacheOutputs(scores) {
-		enc.Encode(c)
-		progress <- ProgressEvent{CACHED_RESULT, 1}
 	}
 
 	progress <- ProgressEvent{DISTANCES_STARTED, 0}
@@ -138,6 +142,8 @@ func main() {
 		}
 		enc.Encode(details)
 	}
+
+	scoreCache.Wait()
 
 	log.Printf("STs: %d; Scores: %d\n", len(STs), len(scores.scores))
 }

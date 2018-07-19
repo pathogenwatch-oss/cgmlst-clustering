@@ -5,10 +5,18 @@ import (
 	"log"
 	"os"
 	"testing"
-	"time"
 
 	"gitlab.com/cgps/bsonkit"
 )
+
+func CacheSinkHole() chan CacheOutput {
+	hole := make(chan CacheOutput)
+	go func() {
+		for range hole {
+		}
+	}()
+	return hole
+}
 
 func TestIndexer(t *testing.T) {
 	indexer := NewIndexer()
@@ -155,8 +163,9 @@ func TestScoreAll(t *testing.T) {
 	for _, p := range testProfiles {
 		profiles.Add(p)
 	}
+	scoreCache := MakeScoreCacher(&scores, CacheSinkHole())
 
-	scoreComplete, errChan := scoreAll(scores, profiles, SinkHole())
+	scoreComplete, errChan := scoreAll(scores, profiles, ProgressSinkHole(), scoreCache)
 	select {
 	case err := <-errChan:
 		if err != nil {
@@ -205,12 +214,12 @@ func TestScoreAllFakeData(t *testing.T) {
 		t.Fatal("Couldn't load test data")
 	}
 
-	_, _, profiles, scores, _, err := parse(testFile, SinkHole())
+	_, _, profiles, scores, _, err := parse(testFile, ProgressSinkHole())
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	scoreComplete, errChan := scoreAll(scores, profiles, SinkHole())
+	scoreCache := MakeScoreCacher(&scores, CacheSinkHole())
+	scoreComplete, errChan := scoreAll(scores, profiles, ProgressSinkHole(), scoreCache)
 	select {
 	case err := <-errChan:
 		if err != nil {
@@ -251,29 +260,86 @@ func TestScoreAllFakeData(t *testing.T) {
 	}
 }
 
-func TestBuildCacheOuputs(t *testing.T) {
-	STs := []string{"1", "2", "3", "4"}
+func count(c chan CacheOutput) int {
+	docs := 0
+	done := false
+	for !done {
+		select {
+		case <-c:
+			docs++
+		default:
+			done = true
+		}
+	}
+	return docs
+}
+
+func TestCount(t *testing.T) {
+	cacheDocs := make(chan CacheOutput, 10)
+	if count(cacheDocs) != 0 {
+		t.Fatal("Expected no docs")
+	}
+	cacheDocs <- CacheOutput{}
+	if count(cacheDocs) != 1 {
+		t.Fatal("Expected one doc")
+	}
+	cacheDocs <- CacheOutput{}
+	cacheDocs <- CacheOutput{}
+	cacheDocs <- CacheOutput{}
+	cacheDocs <- CacheOutput{}
+	if count(cacheDocs) != 4 {
+		t.Fatal("Expected four docs")
+	}
+}
+
+func TestScoreCacher(t *testing.T) {
+	cacheDocs := make(chan CacheOutput, 10)
+	scores := NewScores([]string{"a", "b", "c", "d"})
+	scoreCache := MakeScoreCacher(&scores, cacheDocs)
+	scoreCache.Done("b")
+	scoreCache.Done("c")
+	scoreCache.Done("d")
+	docs := count(cacheDocs)
+	if docs != 1 {
+		t.Fatal("Expected a doc")
+	}
+	scoreCache.Done("d")
+	scoreCache.Done("c")
+	scoreCache.Done("d")
+	docs = count(cacheDocs)
+	if docs != 2 {
+		t.Fatal("Expected two more docs")
+	}
+}
+
+func TestScoreCacheOutput(t *testing.T) {
+	STs := []string{"a", "b", "c", "d"}
 	scores := NewScores(STs)
 	testCases := []scoreDetails{
-		{"2", "1", 0, COMPLETE},
-		{"3", "1", 1, COMPLETE},
-		{"3", "2", 2, COMPLETE},
-		{"4", "1", 3, COMPLETE},
-		{"4", "2", 4, COMPLETE},
-		{"4", "3", 5, COMPLETE},
+		{"b", "a", 0, COMPLETE},
+		{"c", "a", 1, COMPLETE},
+		{"c", "b", 2, COMPLETE},
+		{"d", "a", 3, COMPLETE},
+		{"d", "b", 4, COMPLETE},
+		{"d", "c", 5, COMPLETE},
 	}
 	expected := []CacheOutput{
-		{"2", map[string]int{"1": 0}},
-		{"3", map[string]int{"1": 1, "2": 2}},
-		{"4", map[string]int{"1": 3, "2": 4, "3": 5}},
+		{"b", map[string]int{"a": 0}},
+		{"d", map[string]int{"a": 3, "b": 4, "c": 5}},
+		{"c", map[string]int{"a": 1, "b": 2}},
 	}
 
 	for _, tc := range testCases {
 		scores.Set(tc)
 	}
-
-	output := buildCacheOutputs(scores)
-	timeOut := time.After(5 * time.Second)
+	output := make(chan CacheOutput, 10)
+	scoreCache := MakeScoreCacher(&scores, output)
+	scoreCache.Done("b")
+	scoreCache.Done("c")
+	scoreCache.Done("d")
+	scoreCache.Done("d")
+	scoreCache.Done("d")
+	scoreCache.Done("c")
 
 	var (
 		actual CacheOutput
@@ -286,8 +352,8 @@ func TestBuildCacheOuputs(t *testing.T) {
 			if !more {
 				t.Fatal("Expected more")
 			}
-		case <-timeOut:
-			t.Fatal("Shouldn't take this long")
+		default:
+			t.Fatal("Expected another doc")
 		}
 
 		if tc.ST != actual.ST {
@@ -304,12 +370,9 @@ func TestBuildCacheOuputs(t *testing.T) {
 	}
 
 	select {
-	case actual, more = <-output:
-		if more {
-			t.Fatal("Expected no more")
-		}
-	case <-timeOut:
-		t.Fatal("Shouldn't take this long")
+	case <-output:
+		t.Fatal("Expected no more")
+	default:
 	}
 
 }

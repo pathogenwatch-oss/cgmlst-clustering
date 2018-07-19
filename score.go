@@ -114,7 +114,7 @@ func (c *Comparer) compare(stA string, stB string) int {
 	return geneCount - alleleCount
 }
 
-func scoreProfiles(workerID int, jobs chan int, scores *scoresStore, comparer Comparer, wg *sync.WaitGroup) {
+func scoreProfiles(workerID int, jobs chan int, scores *scoresStore, comparer Comparer, wg *sync.WaitGroup, sc scoreCacher) {
 	nScores := 0
 	defer func() {
 		log.Printf("Worker %d has computed %d scores", workerID, nScores)
@@ -128,6 +128,7 @@ func scoreProfiles(workerID int, jobs chan int, scores *scoresStore, comparer Co
 		score := &(scores.scores[j])
 		score.value = comparer.compare(score.stA, score.stB)
 		score.status = COMPLETE
+		sc.Done(score.stA)
 		nScores++
 		if nScores%100000 == 0 {
 			log.Printf("Worker %d has computed %d scores", workerID, nScores)
@@ -201,30 +202,60 @@ type CacheOutput struct {
 	AlleleDifferences map[CgmlstSt]int `json:"alleleDifferences"`
 }
 
-func buildCacheOutputs(scores scoresStore) chan CacheOutput {
-	outputChan := make(chan CacheOutput, 20)
+type scoreCacher struct {
+	scoresTodo []int
+	scores     *scoresStore
+	output     chan CacheOutput
+	finished   bool
+	wg         *sync.WaitGroup
+}
 
-	rangeStart := func(idx int) int {
-		return (idx * (idx - 1)) / 2
+func MakeScoreCacher(scores *scoresStore, output chan CacheOutput) scoreCacher {
+	nSts := len(scores.STs)
+	scoresTodo := make([]int, nSts)
+	for i := 0; i < nSts; i++ {
+		scoresTodo[i] = i
 	}
+	var wg sync.WaitGroup
+	wg.Add(1)
+	return scoreCacher{scoresTodo, scores, output, false, &wg}
+}
 
-	go func() {
-		defer close(outputChan)
-		for i, stA := range scores.STs {
-			if i == 0 {
-				continue
-			}
-			start := rangeStart(i)
-			end := rangeStart(i + 1)
-			output := CacheOutput{stA, make(map[string]int)}
-			for _, score := range scores.scores[start:end] {
-				output.AlleleDifferences[score.stB] = score.value
-			}
-			outputChan <- output
-		}
-	}()
+func (s *scoreCacher) Done(st CgmlstSt) {
+	idx, ok := s.scores.lookup[st]
+	if !ok {
+		return
+	}
+	s.scoresTodo[idx]--
+	if s.scoresTodo[idx] == 0 {
+		s.cache(idx)
+	}
+}
 
-	return outputChan
+func (s *scoreCacher) cache(idx int) {
+	if idx == 0 {
+		return
+	}
+	stA := s.scores.STs[idx]
+	start := (idx * (idx - 1)) / 2
+	end := ((idx + 1) * idx) / 2
+	output := CacheOutput{stA, make(map[string]int)}
+	for _, score := range s.scores.scores[start:end] {
+		output.AlleleDifferences[score.stB] = score.value
+	}
+	s.output <- output
+}
+
+func (s *scoreCacher) Close() {
+	if !s.finished {
+		close(s.output)
+		s.finished = true
+		s.wg.Done()
+	}
+}
+
+func (s *scoreCacher) Wait() {
+	s.wg.Wait()
 }
 
 func estimateScoreTasks(scores scoresStore) int {
@@ -244,7 +275,7 @@ func estimateScoreTasks(scores scoresStore) int {
 	return tasks
 }
 
-func scoreAll(scores scoresStore, profiles ProfileStore, progress chan ProgressEvent) (done chan bool, err chan error) {
+func scoreAll(scores scoresStore, profiles ProfileStore, progress chan ProgressEvent, sc scoreCacher) (done chan bool, err chan error) {
 	numWorkers := 10
 	indexer := NewIndexer()
 	var indexWg, scoreWg sync.WaitGroup
@@ -284,6 +315,7 @@ func scoreAll(scores scoresStore, profiles ProfileStore, progress chan ProgressE
 				_scoreTasks <- idx
 			} else {
 				progress <- ProgressEvent{SCORE_UPDATED, 1}
+				sc.Done(score.stA)
 			}
 		}
 		close(_scoreTasks)
@@ -291,11 +323,12 @@ func scoreAll(scores scoresStore, profiles ProfileStore, progress chan ProgressE
 
 	for i := 1; i <= numWorkers; i++ {
 		scoreWg.Add(1)
-		go scoreProfiles(i, scoreTasks, &scores, Comparer{lookup: indexer.lookup}, &scoreWg)
+		go scoreProfiles(i, scoreTasks, &scores, Comparer{lookup: indexer.lookup}, &scoreWg, sc)
 	}
 
 	go func() {
 		scoreWg.Wait()
+		sc.Close()
 		progress <- ProgressEvent{SCORING_COMPLETE, 0}
 		done <- true
 	}()
