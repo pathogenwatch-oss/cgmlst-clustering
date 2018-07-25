@@ -182,7 +182,7 @@ func TestParseProfile(t *testing.T) {
 		t.Fatal(docs.Err)
 	}
 
-	if err := updateProfiles(profilesStore, docs.Doc); err != nil {
+	if _, err := updateProfiles(profilesStore, docs.Doc); err != nil {
 		t.Fatal(err)
 	}
 

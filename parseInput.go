@@ -81,20 +81,20 @@ func NewProfileStore(scores *scoresStore) (profiles ProfileStore) {
 	return
 }
 
-func (profiles *ProfileStore) Add(p Profile) error {
+func (profiles *ProfileStore) Add(p Profile) (duplicate bool, err error) {
 	idx, known := profiles.lookup[p.ST]
 	if !known {
-		return fmt.Errorf("unknown fileId %s", p.ST)
+		return false, fmt.Errorf("unknown fileId %s", p.ST)
 	}
 
 	if profiles.seen[idx] {
 		// This is a duplicate of something we've already parsed
-		return nil
+		return true, nil
 	}
 
 	profiles.profiles[idx] = p
 	profiles.seen[idx] = true
-	return nil
+	return false, nil
 }
 
 func (profiles *ProfileStore) Get(ST CgmlstSt) (Profile, error) {
@@ -108,14 +108,14 @@ func (profiles *ProfileStore) Get(ST CgmlstSt) (Profile, error) {
 	return profiles.profiles[idx], nil
 }
 
-func updateProfiles(profiles ProfileStore, doc *bsonkit.Document) error {
+func updateProfiles(profiles ProfileStore, doc *bsonkit.Document) (bool, error) {
 	p, err := parseProfile(doc)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	if p.ST == "" {
-		return errors.New("Profile doc had an invalid fileId")
+		return false, errors.New("Profile doc had an invalid fileId")
 	}
 
 	return profiles.Add(p)
@@ -499,11 +499,12 @@ func parse(r io.Reader, progress chan ProgressEvent) (STs []CgmlstSt, IDs []Geno
 					}
 					break
 				case "analysis":
-					if err := updateProfiles(profiles, doc); err != nil {
+					if duplicate, err := updateProfiles(profiles, doc); err != nil {
 						errChan <- err
 						return
+					} else if !duplicate {
+						progress <- ProgressEvent{PROFILE_PARSED, 1}
 					}
-					progress <- ProgressEvent{PROFILE_PARSED, 1}
 					break
 				}
 			}

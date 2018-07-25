@@ -55,18 +55,18 @@ func ProgressWorker(output *json.Encoder) (input chan ProgressEvent) {
 
 		for msg := range input {
 			// PARSING_STARTED      = 1%
-			// PROFILES_EXPECTED    = 2%
-			// PROFILE_PARSED       = 2-10%
-			// PARSING_COMPLETE     = 11%
-			// PROFILE_INDEXED      = 11-25%
-			// SCORE_UPDATED        = 25-78%
-			// SCORING_COMPLETE     = 79%
-			// CACHED_RESULT        = 79-96%
-			// DISTANCES_STARTED    = 96%
-			// DISTANCES_COMPLETE   = 97%
-			// CLUSTERING_STARTED   = 98%
-			// CLUSTERING_COMPLETED = 99%
-			// EXIT                 = 100%
+			// PROFILES_EXPECTED    = 1%
+			// PROFILE_PARSED       = 8%
+			// PARSING_COMPLETE     = 1%
+			// PROFILE_INDEXED      = 14%
+			// SCORE_UPDATED        = 52%
+			// SCORING_COMPLETE     = 1%
+			// CACHED_RESULT        = 17%
+			// DISTANCES_STARTED    = 1%
+			// DISTANCES_COMPLETE   = 1%
+			// CLUSTERING_STARTED   = 1%
+			// CLUSTERING_COMPLETED = 1%
+			// EXIT                 = 1%
 			switch msg.EventType {
 			case PARSING_STARTED:
 				message = "Loading data"
@@ -77,7 +77,7 @@ func ProgressWorker(output *json.Encoder) (input chan ProgressEvent) {
 				parsingStep = 8.0 / nSts
 				indexingStep = 14.0 / nSts
 				nScores = (nSts * (nSts - 1)) / 2
-				scoringStep = 53.0 / nScores
+				scoringStep = 52.0 / nScores
 				cachingStep = 17.0 / nSts
 			case PROFILE_PARSED:
 				message = "Loading data"
