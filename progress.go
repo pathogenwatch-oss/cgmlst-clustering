@@ -45,8 +45,8 @@ func ProgressWorker(output *json.Encoder) (input chan ProgressEvent) {
 		indexingMessages int
 		cachingMessages  int
 		other            int
-		nScores          float32
-		nSts             float32
+		nScores          int
+		nSts             int
 		message          string
 	)
 
@@ -73,12 +73,12 @@ func ProgressWorker(output *json.Encoder) (input chan ProgressEvent) {
 				other++
 			case PROFILES_EXPECTED:
 				other++
-				nSts = float32(msg.EventValue)
-				parsingStep = 8.0 / nSts
-				indexingStep = 14.0 / nSts
+				nSts = msg.EventValue
+				parsingStep = 8.0 / float32(nSts)
+				indexingStep = 14.0 / float32(nSts)
 				nScores = (nSts * (nSts - 1)) / 2
-				scoringStep = 52.0 / nScores
-				cachingStep = 17.0 / nSts
+				scoringStep = 52.0 / float32(nScores)
+				cachingStep = 17.0 / float32(nSts)
 			case PROFILE_PARSED:
 				message = "Loading data"
 				parsingMessages++
@@ -125,7 +125,30 @@ func ProgressWorker(output *json.Encoder) (input chan ProgressEvent) {
 			// really small.  Once the progress gets to about 64, adding a really small number to it
 			// results in the same number and the progress value stops going up :(
 			// i.e. in float32 maths: 64 + 1e-6 === 64
-			progress = float32(other) + parsingStep*float32(parsingMessages) + indexingStep*float32(indexingMessages) + scoringStep*float32(scoringMessages) + cachingStep*float32(cachingMessages)
+			progress = float32(other)
+			if parsingMessages > nSts {
+				progress += parsingStep * float32(nSts)
+			} else {
+				progress += parsingStep * float32(parsingMessages)
+			}
+			if indexingMessages > nSts {
+				progress += indexingStep * float32(nSts)
+			} else {
+				progress += indexingStep * float32(indexingMessages)
+			}
+			if scoringMessages > nScores {
+				progress += scoringStep * float32(nScores)
+			} else {
+				progress += scoringStep * float32(scoringMessages)
+			}
+			if cachingMessages > nSts {
+				progress += cachingStep * float32(nSts)
+			} else {
+				progress += cachingStep * float32(cachingMessages)
+			}
+			if progress > 99.999 {
+				progress = 99.999
+			}
 			if progress > nextUpdate {
 				output.Encode(ProgressMessage{progress, message})
 				nextUpdate = progress + 0.1
