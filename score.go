@@ -236,9 +236,13 @@ func (s *scoreCacher) cache(idx int) {
 	end := ((idx + 1) * idx) / 2
 	output := CacheOutput{stA, make(map[string]int)}
 	for _, score := range s.scores.scores[start:end] {
-		output.AlleleDifferences[score.stB] = score.value
+		if score.status == COMPLETE {
+			output.AlleleDifferences[score.stB] = score.value
+		}
 	}
-	s.output <- output
+	if len(output.AlleleDifferences) > 0 {
+		s.output <- output
+	}
 }
 
 func (s *scoreCacher) Close() {

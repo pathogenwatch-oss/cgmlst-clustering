@@ -238,7 +238,7 @@ func TestScoreAllFakeData(t *testing.T) {
 	}
 
 	for _, s := range scores.scores {
-		if s.status != COMPLETE {
+		if s.status == PENDING {
 			t.Fatalf("Expected all scores to be complete: %v", s)
 		}
 	}
@@ -295,6 +295,9 @@ func TestCount(t *testing.T) {
 func TestScoreCacher(t *testing.T) {
 	cacheDocs := make(chan CacheOutput, 10)
 	scores := NewScores([]string{"a", "b", "c", "d"})
+	for idx := range scores.scores {
+		scores.scores[idx].status = COMPLETE
+	}
 	scoreCache := MakeScoreCacher(&scores, cacheDocs)
 	scoreCache.Done("b")
 	scoreCache.Done("c")

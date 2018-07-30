@@ -145,10 +145,10 @@ func TestUpdateScores(t *testing.T) {
 		expectedValue  int
 		expectedStatus int
 	}{
-		{"abc", "bcd", 1, COMPLETE},
-		{"bcd", "abc", 1, COMPLETE},
-		{"abc", "cde", 2, COMPLETE},
-		{"cde", "abc", 2, COMPLETE},
+		{"abc", "bcd", 1, FROM_CACHE},
+		{"bcd", "abc", 1, FROM_CACHE},
+		{"abc", "cde", 2, FROM_CACHE},
+		{"cde", "abc", 2, FROM_CACHE},
 		{"abc", "xyz", 5, COMPLETE},
 		{"xyz", "abc", 5, COMPLETE},
 	}
@@ -159,10 +159,10 @@ func TestUpdateScores(t *testing.T) {
 			t.Fatal(err)
 		}
 		if actual.value != tc.expectedValue {
-			t.Fatalf("Got %d, expected %d", actual.value, tc.expectedValue)
+			t.Fatalf("Got %v, expected %v", actual, tc)
 		}
 		if actual.status != tc.expectedStatus {
-			t.Fatalf("Got %d, expected %d", actual.status, tc.expectedStatus)
+			t.Fatalf("Got %v, expected %v", actual, tc)
 		}
 	}
 }

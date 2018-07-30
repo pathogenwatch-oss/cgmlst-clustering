@@ -11,8 +11,9 @@ import (
 )
 
 const (
-	PENDING  int = 0
-	COMPLETE int = 1
+	PENDING    int = 0
+	COMPLETE   int = 1
+	FROM_CACHE int = 2
 )
 
 type GenomeID = bsonkit.ObjectID
@@ -53,7 +54,7 @@ func updateScores(scores scoresStore, s *bsonkit.Document) error {
 		if err := scoresDoc.Value(&score); err != nil {
 			return errors.New("Couldn't parse score")
 		}
-		scores.Set(scoreDetails{stA, stB, int(score), COMPLETE})
+		scores.Set(scoreDetails{stA, stB, int(score), FROM_CACHE})
 	}
 	if scoresDoc.Err != nil {
 		return scoresDoc.Err
@@ -192,7 +193,7 @@ func (s scoresStore) Distances() ([]int, error) {
 
 	for i := 0; i < len(distances); i++ {
 		score := s.scores[i]
-		if score.status != COMPLETE {
+		if score.status == PENDING {
 			return distances, errors.New("Haven't found scores for all pairs of STs")
 		}
 		distances[i] = score.value
