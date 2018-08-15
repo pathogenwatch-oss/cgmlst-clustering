@@ -2,4 +2,3 @@ scoresDoc*
 *.bson
 *.bson.bak
 node_modules/
-package-lock.json

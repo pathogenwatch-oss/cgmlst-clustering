@@ -1,0 +1,9 @@
+{
+  "name": "testdata",
+  "dependencies": {
+    "bson-stream": "^0.0.8",
+    "bson": "^2.0.4",
+    "event-stream": "^3.3.4",
+    "hasha": "^3.0.0"
+  }
+}
