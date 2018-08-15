@@ -5,8 +5,8 @@ test:
   image: golang:1.9-alpine
   script:
     - apk add --update --repository http://dl-3.alpinelinux.org/alpine/edge/main nodejs nodejs-npm git bash
-    - npm install
     - cd testdata
+    - npm install
     - node createTestData.js
     - cd ..
     - ./bin/go-get.sh "gitlab-ci-token:$CI_JOB_TOKEN"
