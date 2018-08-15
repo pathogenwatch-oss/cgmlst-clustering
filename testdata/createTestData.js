@@ -334,6 +334,58 @@ async function main() {
   }
 
   dumpBson("scoresDoc.bson", [doc])
+
+  let scoresString = `differences,${doc.st}`
+  for (st of Object.keys(doc.alleleDifferences)) {
+    scoresString += `,${st}=${doc.alleleDifferences[st]}`
+  }
+  fs.writeFileSync(path.join(__dirname, "scoresDoc.csv"), scoresString)
+
+  sts = [doc.st, ...Object.keys(doc.alleleDifferences)]
+  fs.writeFileSync(path.join(__dirname, "scoresDocSts.csv"), sts.join(','))
+
+  const sqlite3 = require('sqlite3').verbose();
+  const db = new sqlite3.Database(path.join(__dirname, "scoresDoc.db"))
+  db.serialize(function() {
+    db.run("CREATE TABLE IF NOT EXISTS distances (stA TEXT, stB TEXT, distance INTEGER)");
+    var stmt = db.prepare("INSERT INTO distances VALUES (?, ?, ?)");
+    for (st of Object.keys(doc.alleleDifferences)) {
+      stmt.run(doc.st, st, doc.alleleDifferences[st])
+    }
+    stmt.finalize();
+  })
+  await new Promise((resolve, reject) => {
+    db.close(err => {
+      if (err) return reject(err)
+      resolve()
+    });
+  })
+
+  const LENGTH_OF_PREFIX = 12
+  const LENGTH_OF_STA = 20
+  const LENGTH_OF_STB = 20
+  const LENGTH_OF_DISTANCE = 4
+  const NUMBER_OF_STS = Object.keys(doc.alleleDifferences).length
+  const bufferLength = LENGTH_OF_PREFIX + LENGTH_OF_STA + ((LENGTH_OF_STB + LENGTH_OF_DISTANCE) * NUMBER_OF_STS)
+  const scoresBuffer = new Buffer(bufferLength)
+  let offset = 0
+  offset += scoresBuffer.write("differences|", "utf8")
+  if (offset != LENGTH_OF_PREFIX) throw new Error("Bad prefix")
+  offset += scoresBuffer.write(doc.st, offset, "hex")
+  for (st of Object.keys(doc.alleleDifferences)) {
+    offset += scoresBuffer.write(st, offset, "hex")
+    offset = scoresBuffer.writeUInt32LE(doc.alleleDifferences[st], offset)
+  }
+  if (offset != bufferLength) throw new Error("Some bits missing")
+  fs.writeFileSync("scoresDoc.bin", scoresBuffer)
+
+  scoresString = `differences|${doc.st}`
+  for (st of Object.keys(doc.alleleDifferences)) {
+    padded = ("00000" + doc.alleleDifferences[st]).substr(-5, 5)
+    scoresString += `${st}${padded}`
+  }
+  fs.writeFileSync(path.join(__dirname, "scoresDoc.txt"), scoresString)
+
 }
 
 main().then(() => console.log("Done")).catch(err => console.log(err))
