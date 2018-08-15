@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/csv"
 	"fmt"
 	"os"
 	"reflect"
@@ -133,24 +134,24 @@ func TestUpdateScores(t *testing.T) {
 	doc := docs.Doc
 
 	scores := NewScores([]string{"abc", "bcd", "cde", "xyz"})
-	scores.Set(scoreDetails{"bcd", "abc", 7, PENDING})
-	scores.Set(scoreDetails{"xyz", "abc", 5, COMPLETE})
+	scores.Set(1, 0, 7, PENDING)
+	scores.Set(3, 0, 5, COMPLETE)
 	if err := updateScores(scores, doc); err != nil {
 		t.Fatal(err)
 	}
 
 	var testCases = []struct {
-		stA            string
-		stB            string
+		stA            int
+		stB            int
 		expectedValue  int
 		expectedStatus int
 	}{
-		{"abc", "bcd", 1, FROM_CACHE},
-		{"bcd", "abc", 1, FROM_CACHE},
-		{"abc", "cde", 2, FROM_CACHE},
-		{"cde", "abc", 2, FROM_CACHE},
-		{"abc", "xyz", 5, COMPLETE},
-		{"xyz", "abc", 5, COMPLETE},
+		{0, 1, 1, FROM_CACHE},
+		{1, 0, 1, FROM_CACHE},
+		{0, 2, 2, FROM_CACHE},
+		{2, 0, 2, FROM_CACHE},
+		{0, 3, 5, COMPLETE},
+		{3, 0, 5, COMPLETE},
 	}
 
 	for _, tc := range testCases {
@@ -334,9 +335,9 @@ func BenchmarkScores(b *testing.B) {
 	b.ResetTimer()
 	for iter := 0; iter < b.N; iter++ {
 		scores := NewScores(STs)
-		for i, stA := range STs {
-			for _, stB := range STs[:i] {
-				scores.Set(scoreDetails{stA, stB, 0, PENDING})
+		for a := 1; a < len(STs); a++ {
+			for b := 0; b < a; b++ {
+				scores.Set(a, b, 0, PENDING)
 			}
 		}
 	}
@@ -351,15 +352,15 @@ func TestNewScores(t *testing.T) {
 	scores := NewScores(STs)
 
 	idx := 0
-	for i, stA := range STs {
-		for _, stB := range STs[:i] {
-			if err := scores.Set(scoreDetails{stA, stB, idx, PENDING}); err != nil {
+	for a := 1; a < len(STs); a++ {
+		for b := 0; b < a; b++ {
+			if err := scores.Set(a, b, idx, PENDING); err != nil {
 				t.Fatal(err)
 			}
-			if score, err := scores.Get(stA, stB); score.value != idx || err != nil {
-				t.Fatalf("Couldn't get the score for %s:%s", stA, stB)
+			if score, err := scores.Get(a, b); score.value != idx || err != nil {
+				t.Fatalf("Couldn't get the score for %d:%d", a, b)
 			}
-			if calc, err := scores.getIndex(stA, stB); calc != idx || err != nil {
+			if calc, err := scores.getIndex(a, b); calc != idx || err != nil {
 				t.Fatalf("Got %d, expected %d", calc, idx)
 			}
 			idx++
@@ -371,14 +372,14 @@ func TestScoresOrder(t *testing.T) {
 	STs := []string{"st1", "st2", "st3", "st4"}
 	scores := NewScores(STs)
 	expected := []struct {
-		a, b string
+		a, b int
 	}{
-		{"st2", "st1"},
-		{"st3", "st1"},
-		{"st3", "st2"},
-		{"st4", "st1"},
-		{"st4", "st2"},
-		{"st4", "st3"},
+		{1, 0},
+		{2, 0},
+		{2, 1},
+		{3, 0},
+		{3, 1},
+		{3, 2},
 	}
 
 	if len(scores.scores) != len(expected) {
@@ -395,14 +396,14 @@ func TestGetIndex(t *testing.T) {
 	STs := []string{"st1", "st2", "st3", "st4"}
 	scores := NewScores(STs)
 	testCases := []struct {
-		a, b string
+		a, b int
 	}{
-		{"st2", "st1"},
-		{"st3", "st1"},
-		{"st3", "st2"},
-		{"st4", "st1"},
-		{"st4", "st2"},
-		{"st4", "st3"},
+		{1, 0},
+		{2, 0},
+		{2, 1},
+		{3, 0},
+		{3, 1},
+		{3, 2},
 	}
 
 	for i, tc := range testCases {
@@ -423,14 +424,14 @@ func TestGetScore(t *testing.T) {
 	STs := []string{"st1", "st2", "st3", "st4"}
 	scores := NewScores(STs)
 	testCases := []struct {
-		a, b string
+		a, b int
 	}{
-		{"st2", "st1"},
-		{"st3", "st1"},
-		{"st3", "st2"},
-		{"st4", "st1"},
-		{"st4", "st2"},
-		{"st4", "st3"},
+		{1, 0},
+		{2, 0},
+		{2, 1},
+		{3, 0},
+		{3, 1},
+		{3, 2},
 	}
 
 	for _, tc := range testCases {
@@ -443,6 +444,33 @@ func TestGetScore(t *testing.T) {
 			t.Fatal(err)
 		} else if v.stA != tc.a || v.stB != tc.b {
 			t.Fatalf("Expected %v, got %v\n", tc, v)
+		}
+	}
+}
+
+func BenchmarkBsonScores(b *testing.B) {
+	stsFile, err := os.Open("testdata/scoresDocSts.csv")
+	if err != nil {
+		b.Fatal("Couldn't load test data")
+	}
+	r := csv.NewReader(stsFile)
+	sts, err := r.Read()
+	if err != nil {
+		b.Error(err)
+	}
+	store := NewScores(sts)
+
+	testFile, err := os.Open("testdata/scoresDoc.bson")
+	if err != nil {
+		b.Fatal("Couldn't load test data")
+	}
+	docs := bsonkit.GetDocuments(testFile)
+	docs.Next()
+	doc := docs.Doc
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := updateScores(store, doc); err != nil {
+			b.Error(err)
 		}
 	}
 }

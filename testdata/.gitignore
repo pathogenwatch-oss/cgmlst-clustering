@@ -1,3 +1,4 @@
+scoresDoc*
 *.bson
 *.bson.bak
 node_modules/

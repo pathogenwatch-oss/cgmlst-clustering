@@ -4,6 +4,7 @@ const path = require('path');
 const assert = require('assert');
 const zlib = require('zlib')
 const readline = require('readline');
+const hasha = require('hasha');
 
 const bson = new BSON();
 
@@ -320,6 +321,19 @@ async function main() {
       }
     }
   ])
+
+  doc = {
+    id: new BSON.ObjectID(0),
+    st: hasha((0).toString(), { algorithm: "sha1" }),
+    alleleDifferences: {},
+  }
+
+  for (let i = 1; i <= 1000; i++) {
+    st = hasha(i.toString(), { algorithm: "sha1" })
+    doc.alleleDifferences[st] = i
+  }
+
+  dumpBson("scoresDoc.bson", [doc])
 }
 
 main().then(() => console.log("Done")).catch(err => console.log(err))
