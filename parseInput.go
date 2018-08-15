@@ -376,48 +376,22 @@ func parseCgMlst(cgmlstDoc *bsonkit.Document, p *Profile) (err error) {
 	return
 }
 
-func parseAnalysis(analysisDoc *bsonkit.Document, p *Profile) (err error) {
-	cgmlstDoc := new(bsonkit.Document)
-	for analysisDoc.Next() {
-		switch string(analysisDoc.Key()) {
-		case "cgmlst":
-			if err = analysisDoc.Value(cgmlstDoc); err != nil {
-				return
-			}
-			err = parseCgMlst(cgmlstDoc, p)
-			return
-		}
-	}
-	if analysisDoc.Err != nil {
-		return analysisDoc.Err
-	}
-	return errors.New("Could not find cgmlst in analysis")
-}
-
 func parseProfile(doc *bsonkit.Document) (profile Profile, err error) {
-	analysisDoc := new(bsonkit.Document)
+	cgmlstDoc := new(bsonkit.Document)
 	doc.Seek(0)
 	for doc.Next() {
-		switch string(doc.Key()) {
-		case "_id":
-			if err = doc.Value(&profile.ID); err != nil {
-				err = errors.New("Bad value for _id")
+		if string(doc.Key()) == "results" {
+			if err = doc.Value(cgmlstDoc); err != nil {
+				return profile, errors.New("Bad value for analysis")
 			}
-		case "analysis":
-			if err = doc.Value(analysisDoc); err != nil {
-				err = errors.New("Bad value for analysis")
-			} else {
-				err = parseAnalysis(analysisDoc, &profile)
-			}
-		}
-		if err != nil {
-			return
+			err = parseCgMlst(cgmlstDoc, &profile)
+			return profile, err
 		}
 	}
 	if doc.Err != nil {
-		err = doc.Err
+		return profile, doc.Err
 	}
-	return
+	return profile, errors.New("Could not find cgmlst in analysis")
 }
 
 type GenomeSTPair struct {
@@ -502,7 +476,7 @@ func parse(r io.Reader, progress chan ProgressEvent) (STs []CgmlstSt, IDs []Geno
 					}
 					nScores++
 					break
-				case "analysis":
+				case "results":
 					if duplicate, err := updateProfiles(profiles, doc); err != nil {
 						errChan <- err
 						return

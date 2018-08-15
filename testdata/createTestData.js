@@ -55,7 +55,7 @@ function mutate(seed) {
   return mutation
 }
 
-function fakeProfiles(nProfiles) {
+function fakeAnalysisDocs(nProfiles) {
   console.log(`Creating ${nProfiles} fake profile documents`)
 
   nGenes = 2000
@@ -80,28 +80,28 @@ function fakeProfiles(nProfiles) {
   for (i = 0; i < mutations.length; i++) {
     m = mutations[i]
     id = objectId(i)
-    profile = {
+    doc = {
       _id: new BSON.ObjectID(id),
-      public: random() < publicProportion,
-      analysis: {
-        cgmlst: {
-          st: id,
-          matches: [],
-        }
+      task: "cgmlst",
+      version: "20180806174658-v1.6.10",
+      _public: random() < publicProportion,
+      results: {
+        st: id,
+        matches: [],
       }
     }
     for (g = 0; g < nGenes; g++) {
       if (m[g] != null) {
-        profile.analysis.cgmlst.matches.push({"gene": `gene${g}`, "id": m[g]})
+        doc.results.matches.push({"gene": `gene${g}`, "id": m[g]})
       }
     }
-    mutations[i] = profile
+    mutations[i] = doc
     if (i == 5000) {
-      nMatches = Object.values(profile.analysis.cgmlst.matches).length
-      console.log(`Profile ${objectId(i)} has ${nMatches} matches`)
+      nMatches = Object.values(doc.results.matches).length
+      console.log(`doc ${objectId(i)} has ${nMatches} matches`)
     }
     if ((i+1) % 1000 == 0) {
-      console.log(`Created ${i+1} fake profiles`)
+      console.log(`Created ${i+1} fake docs`)
     }
   }
 
@@ -165,7 +165,7 @@ async function main() {
   }
   delete fakeData
 
-  profiles = fakeProfiles(nProfiles)
+  profiles = fakeAnalysisDocs(nProfiles)
   assert.equal(random(), 0.19474356789214653)
   // If this assertion passes, the test data should be consistent
   // MD5 (FakeProfiles.bson) = 71fbd0dab8be0afddadc3506d49caf70
@@ -177,7 +177,7 @@ async function main() {
   fakeData = [genomes]
   for (let i = 0; i < profiles.length; i++) {
     profile = profiles[i]
-    if (profile.public) {
+    if (profile._public) {
       id = objectId(i)
       genomes.genomes.push({
         "_id": new BSON.ObjectID(id),
@@ -248,17 +248,13 @@ async function main() {
     {
       "_id":        new BSON.ObjectID(),
       "fileId":     "whoCares",
-      "organismId": "1280",
-      "public":     true,
-      "analysis": {
-        "cgmlst": {
-          "__v":    "0",
-          "st": "abc",
-          "matches": [
-            {"gene": "foo", "id": 1},
-            {"gene": "bar", "id": "xyz"},
-          ],
-        }
+      "task": "cgmlst",
+      "results": {
+        "st": "abc",
+        "matches": [
+          {"gene": "foo", "id": 1},
+          {"gene": "bar", "id": "xyz"},
+        ],
       }
     }
   ])
@@ -291,33 +287,23 @@ async function main() {
     {
       _id:        new BSON.ObjectID(3),
       fileId:     "xxx",
-      organismId: "1280",
-      public:     true,
-      analysis: {
-        cgmlst: {
-          __v:    "0",
-          st: "ghi",
-          matches: [
-            { gene: "foo", id: 1 },
-            { gene: "bar", id: "xyz" }
-          ]
-        }
+      results: {
+        st: "ghi",
+        matches: [
+          { gene: "foo", id: 1 },
+          { gene: "bar", id: "xyz" }
+        ]
       }
     },
     {
       _id:        new BSON.ObjectID(4),
       fileId:     "yyy",
-      organismId: "1280",
-      public:     true,
-      analysis: {
-        cgmlst: {
-          __v:    "0",
-          st: "jkl",
-          matches: [
-            { gene: "foo", id: 1 },
-            { gene: "bar", id: 2 }
-          ]
-        }
+      results: {
+        st: "jkl",
+        matches: [
+          { gene: "foo", id: 1 },
+          { gene: "bar", id: 2 }
+        ]
       }
     }
   ])
@@ -327,12 +313,10 @@ async function main() {
     st: hasha((0).toString(), { algorithm: "sha1" }),
     alleleDifferences: {},
   }
-
   for (let i = 1; i <= 1000; i++) {
     st = hasha(i.toString(), { algorithm: "sha1" })
     doc.alleleDifferences[st] = i
   }
-
   dumpBson("scoresDoc.bson", [doc])
 }
 

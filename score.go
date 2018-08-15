@@ -69,11 +69,11 @@ func NewIndexer(lookup map[CgmlstSt]int) *Indexer {
 	}
 }
 
-func (i *Indexer) Index(profile Profile) Index {
+func (i *Indexer) Index(profile Profile) *Index {
 	var (
 		offset int
 		ok     bool
-		index  Index
+		index  *Index
 	)
 
 	defer i.Unlock()
@@ -81,17 +81,16 @@ func (i *Indexer) Index(profile Profile) Index {
 	if offset, ok = i.lookup[profile.ST]; !ok {
 		panic("Missing ST during indexing")
 	}
-	index = i.indices[offset]
+	index = &i.indices[offset]
 	if index.Ready {
 		return index
 	}
 
-	genesBa := NewBitArray(2500)
-	var allelesBa *BitArray
+	index.Genes = NewBitArray(2500)
 	if i.alleleTokens.lastValue < 2500 {
-		allelesBa = NewBitArray(2500)
+		index.Alleles = NewBitArray(2500)
 	} else {
-		allelesBa = NewBitArray(i.alleleTokens.lastValue)
+		index.Alleles = NewBitArray(i.alleleTokens.lastValue)
 	}
 	var bit uint64
 	for gene, allele := range profile.Matches {
@@ -99,15 +98,13 @@ func (i *Indexer) Index(profile Profile) Index {
 			gene,
 			allele,
 		})
-		allelesBa.SetBit(bit)
+		index.Alleles.SetBit(bit)
 		bit := i.geneTokens.Get(AlleleKey{
 			gene,
 			nil,
 		})
-		genesBa.SetBit(bit)
+		index.Genes.SetBit(bit)
 	}
-	index.Genes = genesBa
-	index.Alleles = allelesBa
 	index.Ready = true
 	return index
 }

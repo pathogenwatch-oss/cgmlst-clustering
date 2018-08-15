@@ -306,7 +306,7 @@ func TestRead(t *testing.T) {
 			if string(doc.Key()) == "alleleDifferences" {
 				scores++
 				break
-			} else if string(doc.Key()) == "analysis" {
+			} else if string(doc.Key()) == "results" {
 				profiles++
 				break
 			}

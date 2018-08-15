@@ -5,8 +5,6 @@ import (
 	"log"
 	"os"
 	"testing"
-
-	"gitlab.com/cgps/bsonkit"
 )
 
 func CacheSinkHole() chan CacheOutput {
