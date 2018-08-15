@@ -248,7 +248,7 @@ func (s *scoreCacher) cache(idx int) {
 			output.AlleleDifferences[stB] = score.value
 			docSize++
 		}
-		if docSize >= 1000 {
+		if docSize >= 10000 {
 			s.output <- output
 			output = CacheOutput{stA, make(map[string]int)}
 			docSize = 0
