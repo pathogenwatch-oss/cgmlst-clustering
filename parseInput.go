@@ -484,9 +484,11 @@ func parse(r io.Reader, progress chan ProgressEvent) (STs []CgmlstSt, IDs []Geno
 
 	worker := func(workerID int) {
 		nDocs := 0
+		nProfiles := 0
+		nScores := 0
 		defer wg.Done()
 		defer func() {
-			log.Printf("Worker %d finished parsing %d docs\n", workerID, nDocs)
+			log.Printf("Worker %d finished parsing %d scores and %d profile docs\n", workerID, nScores, nProfiles)
 		}()
 
 		log.Printf("Worker %d started\n", workerID)
@@ -499,6 +501,7 @@ func parse(r io.Reader, progress chan ProgressEvent) (STs []CgmlstSt, IDs []Geno
 						errChan <- err
 						return
 					}
+					nScores++
 					break
 				case "analysis":
 					if duplicate, err := updateProfiles(profiles, doc); err != nil {
@@ -507,6 +510,7 @@ func parse(r io.Reader, progress chan ProgressEvent) (STs []CgmlstSt, IDs []Geno
 					} else if !duplicate {
 						progress <- ProgressEvent{PROFILE_PARSED, 1}
 					}
+					nProfiles++
 					break
 				}
 			}
@@ -516,7 +520,7 @@ func parse(r io.Reader, progress chan ProgressEvent) (STs []CgmlstSt, IDs []Geno
 			}
 			nDocs++
 			if nDocs%100 == 0 {
-				log.Printf("Worker %d parsed %d docs\n", workerID, nDocs)
+				log.Printf("Worker %d parsed %d scores and %d profile docs\n", workerID, nScores, nProfiles)
 			}
 		}
 	}
