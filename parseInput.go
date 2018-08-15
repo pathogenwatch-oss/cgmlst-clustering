@@ -48,13 +48,21 @@ func updateScores(scores scoresStore, s *bsonkit.Document) error {
 	if stA == "" {
 		return errors.New("Couldn't find a st")
 	}
+	stAIdx, ok := scores.lookup[stA]
+	if !ok {
+		return errors.New("Couldn't lookup a st")
+	}
 
 	for scoresDoc.Next() {
 		stB = string(scoresDoc.Key())
+		stBIdx, ok := scores.lookup[stB]
+		if !ok {
+			return errors.New("Couldn't lookup a st")
+		}
 		if err := scoresDoc.Value(&score); err != nil {
 			return errors.New("Couldn't parse score")
 		}
-		scores.Set(scoreDetails{stA, stB, int(score), FROM_CACHE})
+		scores.Set(stAIdx, stBIdx, int(score), FROM_CACHE)
 	}
 	if scoresDoc.Err != nil {
 		return scoresDoc.Err
@@ -123,7 +131,7 @@ func updateProfiles(profiles ProfileStore, doc *bsonkit.Document) (bool, error) 
 }
 
 type scoreDetails struct {
-	stA, stB      CgmlstSt
+	stA, stB      int
 	value, status int
 }
 
@@ -142,45 +150,38 @@ func NewScores(STs []CgmlstSt) (s scoresStore) {
 	}
 	// TODO: Do we need to do this initialisation.  PENDING is probably the default value
 	idx := 0
-	for i, stA := range STs {
-		for _, stB := range STs[:i] {
-			s.scores[idx] = scoreDetails{stA, stB, 0, PENDING}
+	for a := 1; a < len(STs); a++ {
+		for b := 0; b < a; b++ {
+			s.scores[idx] = scoreDetails{a, b, 0, PENDING}
 			idx++
 		}
 	}
 	return
 }
 
-func (s scoresStore) getIndex(stA string, stB string) (int, error) {
-	idxA, ok := s.lookup[stA]
-	if !ok {
-		return 0, fmt.Errorf("unknown ST %s", stA)
-	}
-	idxB, ok := s.lookup[stB]
-	if !ok {
-		return 0, fmt.Errorf("unknown ST %s", stB)
-	}
-	minIdx, maxIdx := idxA, idxB
-	if idxA == idxB {
-		return 0, fmt.Errorf("STs shouldn't both be %s", stA)
-	} else if idxA > idxB {
-		minIdx = idxB
-		maxIdx = idxA
+func (s scoresStore) getIndex(stA int, stB int) (int, error) {
+	minIdx, maxIdx := stA, stB
+	if stA == stB {
+		return 0, fmt.Errorf("STs shouldn't both be %d", stA)
+	} else if stA > stB {
+		minIdx = stB
+		maxIdx = stA
 	}
 	scoreIdx := ((maxIdx * (maxIdx - 1)) / 2) + minIdx
 	return scoreIdx, nil
 }
 
-func (s *scoresStore) Set(score scoreDetails) error {
-	idx, err := s.getIndex(score.stA, score.stB)
+func (s *scoresStore) Set(stA int, stB int, score int, status int) error {
+	idx, err := s.getIndex(stA, stB)
 	if err != nil {
 		return err
 	}
-	s.scores[idx] = score
+	s.scores[idx].value = score
+	s.scores[idx].status = status
 	return nil
 }
 
-func (s scoresStore) Get(stA string, stB string) (scoreDetails, error) {
+func (s scoresStore) Get(stA int, stB int) (scoreDetails, error) {
 	idx, err := s.getIndex(stA, stB)
 	if err != nil {
 		return scoreDetails{}, err

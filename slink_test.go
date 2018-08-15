@@ -26,11 +26,11 @@ func TestGet(t *testing.T) {
 	// ...C...
 
 	distances := []scoreDetails{
-		{"a", "b", 1, COMPLETE},
-		{"a", "c", 3, COMPLETE}, {"b", "c", 2, COMPLETE},
-		{"a", "d", 2, COMPLETE}, {"b", "d", 3, COMPLETE}, {"c", "d", 5, COMPLETE},
-		{"a", "e", 3, COMPLETE}, {"b", "e", 4, COMPLETE}, {"c", "e", 6, COMPLETE}, {"d", "e", 1, COMPLETE},
-		{"a", "f", 4, COMPLETE}, {"b", "f", 3, COMPLETE}, {"c", "f", 5, COMPLETE}, {"d", "f", 6, COMPLETE}, {"e", "f", 7, COMPLETE},
+		{0, 1, 1, COMPLETE},
+		{0, 2, 3, COMPLETE}, {1, 2, 2, COMPLETE},
+		{0, 3, 2, COMPLETE}, {1, 3, 3, COMPLETE}, {2, 3, 5, COMPLETE},
+		{0, 4, 3, COMPLETE}, {1, 4, 4, COMPLETE}, {2, 4, 6, COMPLETE}, {3, 4, 1, COMPLETE},
+		{0, 5, 4, COMPLETE}, {1, 5, 3, COMPLETE}, {2, 5, 5, COMPLETE}, {3, 5, 6, COMPLETE}, {4, 5, 7, COMPLETE},
 	}
 
 	scores := scoresStore{scores: distances, STs: []string{"a", "b", "c", "d", "e", "f"}}
@@ -60,12 +60,12 @@ func TestAnotherGet(t *testing.T) {
 	// E-4       4-F
 
 	distances := []scoreDetails{
-		{"a", "b", 2, COMPLETE},
-		{"a", "c", 12, COMPLETE}, {"b", "c", 10, COMPLETE},
-		{"a", "d", 15, COMPLETE}, {"b", "d", 13, COMPLETE}, {"c", "d", 3, COMPLETE},
-		{"a", "e", 6, COMPLETE}, {"b", "e", 4, COMPLETE}, {"c", "e", 14, COMPLETE}, {"d", "e", 17, COMPLETE},
-		{"a", "f", 16, COMPLETE}, {"b", "f", 14, COMPLETE}, {"c", "f", 4, COMPLETE}, {"d", "f", 7, COMPLETE}, {"e", "f", 18, COMPLETE},
-		{"a", "g", 7, COMPLETE}, {"b", "g", 5, COMPLETE}, {"c", "g", 5, COMPLETE}, {"d", "g", 8, COMPLETE}, {"e", "g", 9, COMPLETE}, {"f", "g", 9, COMPLETE},
+		{0, 1, 2, COMPLETE},
+		{0, 2, 12, COMPLETE}, {1, 2, 10, COMPLETE},
+		{0, 3, 15, COMPLETE}, {1, 3, 13, COMPLETE}, {2, 3, 3, COMPLETE},
+		{0, 4, 6, COMPLETE}, {1, 4, 4, COMPLETE}, {2, 4, 14, COMPLETE}, {3, 4, 17, COMPLETE},
+		{0, 5, 16, COMPLETE}, {1, 5, 14, COMPLETE}, {2, 5, 4, COMPLETE}, {3, 5, 7, COMPLETE}, {4, 5, 18, COMPLETE},
+		{0, 6, 7, COMPLETE}, {1, 6, 5, COMPLETE}, {2, 6, 5, COMPLETE}, {3, 6, 8, COMPLETE}, {4, 6, 9, COMPLETE}, {5, 6, 9, COMPLETE},
 	}
 
 	scores := scoresStore{scores: distances, STs: []string{"a", "b", "c", "d", "e", "f", "g"}}
@@ -120,8 +120,7 @@ func randomScores(n int, seed int64) scoresStore {
 		stA := fmt.Sprintf("st%d", a)
 		STs[a] = stA
 		for b := 0; b < a; b++ {
-			stB := fmt.Sprintf("st%d", b)
-			distances[idx] = scoreDetails{stA, stB, r.Intn(100 * n), COMPLETE}
+			distances[idx] = scoreDetails{a, b, r.Intn(100 * n), COMPLETE}
 			idx++
 		}
 	}

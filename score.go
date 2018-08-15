@@ -10,6 +10,7 @@ import (
 type Index struct {
 	Genes   *BitArray
 	Alleles *BitArray
+	Ready   bool
 }
 
 type AlleleKey struct {
@@ -54,24 +55,37 @@ type Indexer struct {
 	sync.Mutex
 	geneTokens   *Tokeniser
 	alleleTokens *Tokeniser
-	lookup       map[CgmlstSt]Index
+	indices      []Index
+	lookup       map[CgmlstSt]int
 }
 
-func NewIndexer() *Indexer {
-	i := Indexer{
+func NewIndexer(lookup map[CgmlstSt]int) *Indexer {
+	nSts := len(lookup)
+	return &Indexer{
 		geneTokens:   NewTokeniser(),
 		alleleTokens: NewTokeniser(),
-		lookup:       make(map[CgmlstSt]Index),
+		indices:      make([]Index, nSts),
+		lookup:       lookup,
 	}
-	return &i
 }
 
 func (i *Indexer) Index(profile Profile) Index {
+	var (
+		offset int
+		ok     bool
+		index  Index
+	)
+
 	defer i.Unlock()
 	i.Lock()
-	if index, ok := i.lookup[profile.ST]; ok {
+	if offset, ok = i.lookup[profile.ST]; !ok {
+		panic("Missing ST during indexing")
+	}
+	index = i.indices[offset]
+	if index.Ready {
 		return index
 	}
+
 	genesBa := NewBitArray(2500)
 	var allelesBa *BitArray
 	if i.alleleTokens.lastValue < 2500 {
@@ -92,24 +106,19 @@ func (i *Indexer) Index(profile Profile) Index {
 		})
 		genesBa.SetBit(bit)
 	}
-	index := Index{
-		Genes:   genesBa,
-		Alleles: allelesBa,
-	}
-	i.lookup[profile.ST] = index
+	index.Genes = genesBa
+	index.Alleles = allelesBa
+	index.Ready = true
 	return index
 }
 
 type Comparer struct {
-	lookup map[CgmlstSt]Index
+	indices []Index
 }
 
-func (c *Comparer) compare(stA string, stB string) int {
-	indexA, okA := c.lookup[stA]
-	indexB, okB := c.lookup[stB]
-	if !okA || !okB {
-		panic("Missing index")
-	}
+func (c *Comparer) compare(stA int, stB int) int {
+	indexA := c.indices[stA]
+	indexB := c.indices[stB]
 	geneCount := CompareBits(indexA.Genes, indexB.Genes)
 	alleleCount := CompareBits(indexA.Alleles, indexB.Alleles)
 	return geneCount - alleleCount
@@ -216,18 +225,15 @@ func MakeScoreCacher(scores *scoresStore, output chan CacheOutput) scoreCacher {
 	return scoreCacher{stScoresCompleted, scores, output, false}
 }
 
-func (s *scoreCacher) Done(st CgmlstSt) {
-	idx, ok := s.scores.lookup[st]
-	if !ok {
-		return
-	}
-	count := atomic.AddInt32(&s.stScoresCompleted[idx], 1)
-	if count == int32(idx) {
-		s.cache(idx)
+func (s *scoreCacher) Done(st int) {
+	count := atomic.AddInt32(&s.stScoresCompleted[st], 1)
+	if count == int32(st) {
+		s.cache(st)
 	}
 }
 
 func (s *scoreCacher) cache(idx int) {
+	var stB CgmlstSt
 	if idx == 0 {
 		return
 	}
@@ -238,7 +244,8 @@ func (s *scoreCacher) cache(idx int) {
 	docSize := 0
 	for _, score := range s.scores.scores[start:end] {
 		if score.status == COMPLETE {
-			output.AlleleDifferences[score.stB] = score.value
+			stB = s.scores.STs[score.stB]
+			output.AlleleDifferences[stB] = score.value
 			docSize++
 		}
 		if docSize >= 1000 {
@@ -286,7 +293,7 @@ func estimateScoreTasks(scores scoresStore) int {
 
 func scoreAll(scores scoresStore, profiles ProfileStore, progress chan ProgressEvent, sc scoreCacher) (done chan bool, err chan error) {
 	numWorkers := 10
-	indexer := NewIndexer()
+	indexer := NewIndexer(scores.lookup)
 	var indexWg, scoreWg sync.WaitGroup
 
 	err = make(chan error)
@@ -332,7 +339,7 @@ func scoreAll(scores scoresStore, profiles ProfileStore, progress chan ProgressE
 
 	for i := 1; i <= numWorkers; i++ {
 		scoreWg.Add(1)
-		go scoreProfiles(i, scoreTasks, &scores, Comparer{lookup: indexer.lookup}, &scoreWg, &sc)
+		go scoreProfiles(i, scoreTasks, &scores, Comparer{indexer.indices}, &scoreWg, &sc)
 	}
 
 	go func() {

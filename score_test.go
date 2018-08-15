@@ -19,7 +19,10 @@ func CacheSinkHole() chan CacheOutput {
 }
 
 func TestIndexer(t *testing.T) {
-	indexer := NewIndexer()
+	lookup := make(map[CgmlstSt]int)
+	lookup["abc123"] = 0
+	lookup["bcd234"] = 1
+	indexer := NewIndexer(lookup)
 	indexer.Index(Profile{
 		ID: bsonkit.ObjectID{byte(0)},
 		ST: "abc123",
@@ -29,7 +32,7 @@ func TestIndexer(t *testing.T) {
 			"gene3": 1,
 		},
 	})
-	index := indexer.lookup["abc123"]
+	index := indexer.indices[indexer.lookup["abc123"]]
 	if value := index.Genes.blocks[0]; value != 7 {
 		t.Fatalf("Got %d, expected 7\n", value)
 	}
@@ -54,7 +57,7 @@ func TestIndexer(t *testing.T) {
 	}))
 	expectedValue := 7 - valueOfGene3 + valueOfGene4
 
-	index = indexer.lookup["bcd234"]
+	index = indexer.indices[indexer.lookup["bcd234"]]
 	if value := index.Genes.blocks[0]; value != uint64(expectedValue) {
 		t.Fatalf("Got %d, expected %d\n", value, expectedValue)
 	}
@@ -95,7 +98,12 @@ func TestComparer(t *testing.T) {
 		},
 	}
 
-	indexer := NewIndexer()
+	lookup := make(map[CgmlstSt]int)
+	lookup["abc123"] = 0
+	lookup["bcd234"] = 1
+	lookup["cde345"] = 2
+
+	indexer := NewIndexer(lookup)
 	for i, p := range profiles {
 		indexer.Index(p)
 		for j := 0; j < 10000; j++ {
@@ -106,21 +114,21 @@ func TestComparer(t *testing.T) {
 		}
 	}
 
-	if nBlocks := len(indexer.lookup["bcd234"].Alleles.blocks); nBlocks != 157 {
+	if nBlocks := len(indexer.indices[indexer.lookup["bcd234"]].Alleles.blocks); nBlocks != 157 {
 		t.Fatalf("Expected 157 blocks, got %d\n", nBlocks)
 	}
-	if nBlocks := len(indexer.lookup["cde345"].Alleles.blocks); nBlocks != 313 {
+	if nBlocks := len(indexer.indices[indexer.lookup["cde345"]].Alleles.blocks); nBlocks != 313 {
 		t.Fatalf("Expected 313 blocks, got %d\n", nBlocks)
 	}
 
-	comparer := Comparer{lookup: indexer.lookup}
-	if value := comparer.compare("abc123", "bcd234"); value != 2 {
+	comparer := Comparer{indexer.indices}
+	if value := comparer.compare(0, 1); value != 2 {
 		t.Fatalf("Expected 2, got %d\n", value)
 	}
-	if value := comparer.compare("abc123", "cde345"); value != 1 {
+	if value := comparer.compare(0, 2); value != 1 {
 		t.Fatalf("Expected 1, got %d\n", value)
 	}
-	if value := comparer.compare("bcd234", "cde345"); value != 1 {
+	if value := comparer.compare(1, 2); value != 1 {
 		t.Fatalf("Expected 1, got %d\n", value)
 	}
 }
@@ -299,16 +307,16 @@ func TestScoreCacher(t *testing.T) {
 		scores.scores[idx].status = COMPLETE
 	}
 	scoreCache := MakeScoreCacher(&scores, cacheDocs)
-	scoreCache.Done("b")
-	scoreCache.Done("c")
-	scoreCache.Done("d")
+	scoreCache.Done(1)
+	scoreCache.Done(2)
+	scoreCache.Done(3)
 	docs := count(cacheDocs)
 	if docs != 1 {
 		t.Fatal("Expected a doc")
 	}
-	scoreCache.Done("d")
-	scoreCache.Done("c")
-	scoreCache.Done("d")
+	scoreCache.Done(3)
+	scoreCache.Done(2)
+	scoreCache.Done(3)
 	docs = count(cacheDocs)
 	if docs != 2 {
 		t.Fatal("Expected two more docs")
@@ -319,12 +327,12 @@ func TestScoreCacheOutput(t *testing.T) {
 	STs := []string{"a", "b", "c", "d"}
 	scores := NewScores(STs)
 	testCases := []scoreDetails{
-		{"b", "a", 0, COMPLETE},
-		{"c", "a", 1, COMPLETE},
-		{"c", "b", 2, COMPLETE},
-		{"d", "a", 3, COMPLETE},
-		{"d", "b", 4, COMPLETE},
-		{"d", "c", 5, COMPLETE},
+		{1, 0, 0, COMPLETE},
+		{2, 0, 1, COMPLETE},
+		{2, 1, 2, COMPLETE},
+		{3, 0, 3, COMPLETE},
+		{3, 1, 4, COMPLETE},
+		{3, 2, 5, COMPLETE},
 	}
 	expected := []CacheOutput{
 		{"b", map[string]int{"a": 0}},
@@ -333,16 +341,16 @@ func TestScoreCacheOutput(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		scores.Set(tc)
+		scores.Set(tc.stA, tc.stB, tc.value, tc.status)
 	}
 	output := make(chan CacheOutput, 10)
 	scoreCache := MakeScoreCacher(&scores, output)
-	scoreCache.Done("b")
-	scoreCache.Done("c")
-	scoreCache.Done("d")
-	scoreCache.Done("d")
-	scoreCache.Done("d")
-	scoreCache.Done("c")
+	scoreCache.Done(1)
+	scoreCache.Done(2)
+	scoreCache.Done(3)
+	scoreCache.Done(3)
+	scoreCache.Done(3)
+	scoreCache.Done(2)
 
 	var (
 		actual CacheOutput
