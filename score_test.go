@@ -24,7 +24,6 @@ func TestIndexer(t *testing.T) {
 	lookup["bcd234"] = 1
 	indexer := NewIndexer(lookup)
 	indexer.Index(Profile{
-		ID: bsonkit.ObjectID{byte(0)},
 		ST: "abc123",
 		Matches: map[string]interface{}{
 			"gene1": 1,
@@ -38,7 +37,6 @@ func TestIndexer(t *testing.T) {
 	}
 
 	indexer.Index(Profile{
-		ID: bsonkit.ObjectID{byte(1)},
 		ST: "bcd234",
 		Matches: map[string]interface{}{
 			"gene1": 2,
@@ -69,7 +67,6 @@ func TestIndexer(t *testing.T) {
 func TestComparer(t *testing.T) {
 	profiles := [...]Profile{
 		Profile{
-			ID: bsonkit.ObjectID{byte(0)},
 			ST: "abc123",
 			Matches: map[string]interface{}{
 				"gene1": 1,
@@ -78,7 +75,6 @@ func TestComparer(t *testing.T) {
 			},
 		},
 		Profile{
-			ID: bsonkit.ObjectID{byte(1)},
 			ST: "bcd234",
 			Matches: map[string]interface{}{
 				"gene1": 2,
@@ -87,7 +83,6 @@ func TestComparer(t *testing.T) {
 			},
 		},
 		Profile{
-			ID: bsonkit.ObjectID{byte(2)},
 			ST: "cde345",
 			Matches: map[string]interface{}{
 				"gene1": 1,
@@ -136,7 +131,6 @@ func TestComparer(t *testing.T) {
 func TestScoreAll(t *testing.T) {
 	testProfiles := [...]Profile{
 		Profile{
-			ID: bsonkit.ObjectID{byte(0)},
 			ST: "abc123",
 			Matches: map[string]interface{}{
 				"gene1": 1,
@@ -145,7 +139,6 @@ func TestScoreAll(t *testing.T) {
 			},
 		},
 		Profile{
-			ID: bsonkit.ObjectID{byte(1)},
 			ST: "bcd234",
 			Matches: map[string]interface{}{
 				"gene1": 2,
@@ -154,7 +147,6 @@ func TestScoreAll(t *testing.T) {
 			},
 		},
 		Profile{
-			ID: bsonkit.ObjectID{byte(2)},
 			ST: "cde345",
 			Matches: map[string]interface{}{
 				"gene1": 1,

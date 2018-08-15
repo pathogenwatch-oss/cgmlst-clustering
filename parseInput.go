@@ -72,7 +72,6 @@ func updateScores(scores scoresStore, s *bsonkit.Document) error {
 }
 
 type Profile struct {
-	ID      GenomeID
 	ST      CgmlstSt
 	Matches M
 }
