@@ -146,101 +146,67 @@ async function appendScores(data, scoresFile) {
 async function main() {
   // Make some fake profiles
   nProfiles = 7000
-  genomes = { genomes: [], thresholds: [5, 50, 200, 500]}
+  request = { STs: [], maxThreshold: 50 }
   for (let i = 0; i < nProfiles; i++) {
     id = objectId(i)
-    genomes.genomes.push({
-      "_id": new BSON.ObjectID(id),
-      "st": id
-    })
+    request.STs.push(id)
   }
-  fakeData = [genomes]
-  await appendScores(fakeData, "FakePublicScores.json.gz")
-  assert.equal(fakeData.length, 5573)
+  cache = JSON.parse(fs.readFileSync("FakePublicCache.json"))
+  assert.equal(cache.STs.length, 5573)
+  assert.equal(cache.pi.length, 5573)
+  assert.equal(cache.lambda.length, 5573)
+  fakeData = [request, cache]
 
   dumpBson("FakeProfiles.bson", fakeData)
-  // I was running out of RAM
-  for (let i = 0; i < fakeData.length; i++) {
-    fakeData[i] = null
-  }
-  delete fakeData
-
   profiles = fakeAnalysisDocs(nProfiles)
   assert.equal(random(), 0.19474356789214653)
   // If this assertion passes, the test data should be consistent
-  // MD5 (FakeProfiles.bson) = 71fbd0dab8be0afddadc3506d49caf70
-  // MD5 (FakePublicProfiles.bson) = a0484af3ecc1d8c3d0321786c125cf08
   dumpBson("FakeProfiles.bson", profiles, true)
 
   // Just the public profiles
-  genomes = { genomes: [], thresholds: [5, 50, 200, 500]}
-  fakeData = [genomes]
+  request = { STs: [], maxThreshold: 50 }
+  fakeData = [request]
   for (let i = 0; i < profiles.length; i++) {
     profile = profiles[i]
     if (profile._public) {
       id = objectId(i)
-      genomes.genomes.push({
-        "_id": new BSON.ObjectID(id),
-        "st": id
-      })
+      request.STs.push(id)
       fakeData.push(profile)
     }
   }
   dumpBson("FakePublicProfiles.bson", fakeData)
 
-  dumpBson("TestParseGenomeDoc.bson", [
+  dumpBson("TestParseRequestDoc.bson", [
     {
-      genomes: [
-        { "_id": new BSON.ObjectID(1), "st": "abc" },
-        { "_id": new BSON.ObjectID(2), "st": "def" },
-        { "_id": new BSON.ObjectID(3), "st": "ghi" }
-      ],
-      thresholds: [5, 50]
+      STs: [ "abc", "def", "ghi" ],
+      maxThreshold: 50
     },
     {
-      genomes: [
-        { "_id": new BSON.ObjectID(4), "st": "abc" },
-        { "_id": new BSON.ObjectID(5), "st": "abc" },
-        { "_id": new BSON.ObjectID(6), "st": "ghi" }
-      ],
-      thresholds: [5, 50]
+      STs: [ "abc", "abc", "ghi" ],
+      maxThreshold: 50
     },
     {
       genomes: [
         { "wrong": "abc" },
       ],
-      thresholds: [5, 50]
+      maxThreshold: 50
     },
     {
-      wrong: [
-        { "_id": new BSON.ObjectID(7), "st": "abc" },
-      ],
-      thresholds: [5, 50]
+      STs: [ "abc", "def", "ghi" ]
     },
-    {
-      genomes: [
-        { "_id": new BSON.ObjectID(1), "st": "abc" },
-        { "_id": new BSON.ObjectID(2), "st": "def" },
-        { "_id": new BSON.ObjectID(3), "st": "ghi" }
-      ]
-    },
-    {
-      genomes: [
-        { "_id": new BSON.ObjectID(1), "st": "abc" },
-        { "_id": new BSON.ObjectID(2), "st": "def" },
-        { "_id": new BSON.ObjectID(3), "st": "ghi" }
-      ],
-      thresholds: []
-    }
   ])
 
-  dumpBson("TestUpdateScores.bson", [
+  dumpBson("TestParseCache.bson", [
     {
-      "st": "abc",
-      "alleleDifferences": {
-        "bcd": 1,
-        "cde": 2,
-      },
+      threshold: 5,
+      STs: ["a", "b", "c", "d"],
+      pi: [2, 3, 3, 3],
+      lambda: [1, 1, 2, 2147483647],
+      edges: {
+        1: [[0, 2], [1, 3]],
+        2: [[2, 3]],
+        5: [[0, 1]]
+      }
     }
   ])
 
@@ -261,34 +227,25 @@ async function main() {
 
   dumpBson("TestParse.bson", [
     {
-      genomes: [
-        { _id: new BSON.ObjectID(1), st: "abc" },
-        { _id: new BSON.ObjectID(2), st: "def" },
-        { _id: new BSON.ObjectID(3), st: "ghi" },
-        { _id: new BSON.ObjectID(4), st: "jkl" }
-      ],
-      thresholds: [5, 50, 200, 500]
+      STs: ["a", "e", "b", "c", "d"],
+      maxThreshold: 5
     },
     {
-      st: "abc",
-      alleleDifferences: {
-        "def": 1,
-        "ghi": 2,
-        "jkl": 3
-      }
-    },
-    {
-      st: "def",
-      alleleDifferences: {
-        "ghi": 4,
-        "jkl": 5
+      threshold: 5,
+      STs: ["a", "b", "c", "d"],
+      pi: [2, 3, 3, 3],
+      lambda: [1, 1, 2, 2147483647],
+      edges: {
+        1: [[0, 2], [1, 3]],
+        2: [[2, 3]],
+        5: [[0, 1]]
       }
     },
     {
       _id:        new BSON.ObjectID(3),
       fileId:     "xxx",
       results: {
-        st: "ghi",
+        st: "a",
         matches: [
           { gene: "foo", id: 1 },
           { gene: "bar", id: "xyz" }
@@ -299,7 +256,7 @@ async function main() {
       _id:        new BSON.ObjectID(4),
       fileId:     "yyy",
       results: {
-        st: "jkl",
+        st: "e",
         matches: [
           { gene: "foo", id: 1 },
           { gene: "bar", id: 2 }
@@ -308,16 +265,34 @@ async function main() {
     }
   ])
 
-  doc = {
-    id: new BSON.ObjectID(0),
-    st: hasha((0).toString(), { algorithm: "sha1" }),
-    alleleDifferences: {},
-  }
-  for (let i = 1; i <= 1000; i++) {
-    st = hasha(i.toString(), { algorithm: "sha1" })
-    doc.alleleDifferences[st] = i
-  }
-  dumpBson("scoresDoc.bson", [doc])
+  dumpBson("TestParseNoCache.bson", [
+    {
+      STs: ["a", "e", "b", "c", "d"],
+      maxThreshold: 5
+    },
+    {
+      _id:        new BSON.ObjectID(3),
+      fileId:     "xxx",
+      results: {
+        st: "a",
+        matches: [
+          { gene: "foo", id: 1 },
+          { gene: "bar", id: "xyz" }
+        ]
+      }
+    },
+    {
+      _id:        new BSON.ObjectID(4),
+      fileId:     "yyy",
+      results: {
+        st: "e",
+        matches: [
+          { gene: "foo", id: 1 },
+          { gene: "bar", id: 2 }
+        ]
+      }
+    }
+  ])
 }
 
 main().then(() => console.log("Done")).catch(err => console.log(err))
