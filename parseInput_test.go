@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/csv"
 	"fmt"
 	"os"
 	"reflect"
@@ -10,8 +9,8 @@ import (
 	"gitlab.com/cgps/bsonkit"
 )
 
-func TestParseGenomeDoc(t *testing.T) {
-	testFile, err := os.Open("testdata/TestParseGenomeDoc.bson")
+func TestParseRequestDoc(t *testing.T) {
+	testFile, err := os.Open("testdata/TestParseRequestDoc.bson")
 	if err != nil {
 		t.Fatal("Couldn't load test data")
 	}
@@ -23,23 +22,16 @@ func TestParseGenomeDoc(t *testing.T) {
 	}
 	doc := docs.Doc
 
-	if STs, IDs, thresholds, err := parseGenomeDoc(doc); err != nil {
+	if STs, maxThreshold, err := parseRequestDoc(doc); err != nil {
 		t.Fatal(err)
 	} else if len(STs) != 3 {
 		t.Fatal("Expected 3 STs got", STs)
-	} else if len(IDs) != 3 {
-		t.Fatal("Expected 2 STs")
-	} else if !reflect.DeepEqual(thresholds, []int{5, 50}) {
-		t.Fatalf("Expected %v got %v\n", []int{5, 50}, thresholds)
+	} else if maxThreshold != 50 {
+		t.Fatalf("Expected %v got %v\n", 50, maxThreshold)
 	} else {
 		expected := []string{"abc", "def", "ghi"}
 		if !reflect.DeepEqual(STs, expected) {
 			t.Fatalf("Expected %v got %v\n", expected, STs)
-		}
-		for i, ID := range IDs {
-			if ID.ST != expected[i] {
-				t.Fatalf("%d: got %s, expected %s\n", i, ID, expected[i])
-			}
 		}
 	}
 
@@ -50,24 +42,16 @@ func TestParseGenomeDoc(t *testing.T) {
 	}
 	doc = docs.Doc
 
-	if STs, IDs, thresholds, err := parseGenomeDoc(doc); err != nil {
+	if STs, maxThreshold, err := parseRequestDoc(doc); err != nil {
 		t.Fatal(err)
-	} else if len(STs) != 2 {
-		t.Fatal("Expected 2 STs")
-	} else if len(IDs) != 3 {
-		t.Fatal("Expected 2 STs")
-	} else if !reflect.DeepEqual(thresholds, []int{5, 50}) {
-		t.Fatalf("Expected %v got %v\n", []int{5, 50}, thresholds)
+	} else if len(STs) != 3 {
+		t.Fatal("Expected 3 STs")
+	} else if maxThreshold != 50 {
+		t.Fatalf("Expected %v got %v\n", 50, maxThreshold)
 	} else {
-		expected := []string{"abc", "ghi"}
+		expected := []string{"abc", "abc", "ghi"}
 		if !reflect.DeepEqual(STs, expected) {
 			t.Fatalf("Expected %v got %v\n", expected, STs)
-		}
-		expected = []string{"abc", "abc", "ghi"}
-		for i, ID := range IDs {
-			if ID.ST != expected[i] {
-				t.Fatalf("%d: got %s, expected %s\n", i, ID, expected[i])
-			}
 		}
 	}
 
@@ -78,41 +62,19 @@ func TestParseGenomeDoc(t *testing.T) {
 	}
 	doc = docs.Doc
 
-	if _, _, _, err := parseGenomeDoc(doc); err == nil {
+	if _, _, err := parseRequestDoc(doc); err == nil {
 		t.Fatal("This doesn't have a ST. Should have thrown an error")
 	}
 
-	// This isn't a genomes document
+	// Doesn't have a maxThresholds key
 	docs.Next()
 	if docs.Err != nil {
 		t.Fatal(docs.Err)
 	}
 	doc = docs.Doc
 
-	if _, _, _, err := parseGenomeDoc(doc); err == nil {
-		t.Fatal("This isn't a genomes document. Should have thrown an error")
-	}
-
-	// Doesn't have a thresholds key
-	docs.Next()
-	if docs.Err != nil {
-		t.Fatal(docs.Err)
-	}
-	doc = docs.Doc
-
-	if _, _, _, err := parseGenomeDoc(doc); err == nil {
+	if _, _, err := parseRequestDoc(doc); err == nil {
 		t.Fatal("Doesn't have a thresholds key. Should have thrown an error")
-	}
-
-	// Thresholds are empty
-	docs.Next()
-	if docs.Err != nil {
-		t.Fatal(docs.Err)
-	}
-	doc = docs.Doc
-
-	if _, _, _, err := parseGenomeDoc(doc); err == nil {
-		t.Fatal("Thresholds are empty. Should have thrown an error")
 	}
 
 	if docs.Next() {
@@ -120,8 +82,8 @@ func TestParseGenomeDoc(t *testing.T) {
 	}
 }
 
-func TestUpdateScores(t *testing.T) {
-	testFile, err := os.Open("testdata/TestUpdateScores.bson")
+func TestParseCache(t *testing.T) {
+	testFile, err := os.Open("testdata/TestParseCache.bson")
 	if err != nil {
 		t.Fatal("Couldn't load test data")
 	}
@@ -133,37 +95,130 @@ func TestUpdateScores(t *testing.T) {
 	}
 	doc := docs.Doc
 
-	scores := NewScores([]string{"abc", "bcd", "cde", "xyz"})
-	scores.Set(1, 0, 7, PENDING)
-	scores.Set(3, 0, 5, COMPLETE)
-	if err := updateScores(scores, doc); err != nil {
+	existingClusters, existingSts, _, cacheThreshold, err := parseCache(doc)
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	var testCases = []struct {
-		stA            int
-		stB            int
-		expectedValue  int
-		expectedStatus int
-	}{
-		{0, 1, 1, FROM_CACHE},
-		{1, 0, 1, FROM_CACHE},
-		{0, 2, 2, FROM_CACHE},
-		{2, 0, 2, FROM_CACHE},
-		{0, 3, 5, COMPLETE},
-		{3, 0, 5, COMPLETE},
+	expected := []int{2, 3, 3, 3}
+	if !reflect.DeepEqual(existingClusters.pi, expected) {
+		t.Fatalf("Expected %v, got %v", expected, existingClusters.pi)
 	}
 
-	for _, tc := range testCases {
-		actual, err := scores.Get(tc.stA, tc.stB)
-		if err != nil {
-			t.Fatal(err)
+	expected = []int{1, 1, 2, ALMOST_INF}
+	if !reflect.DeepEqual(existingClusters.lambda, expected) {
+		t.Fatalf("Expected %v, got %v", expected, existingClusters.lambda)
+	}
+
+	expectedStrings := []string{"a", "b", "c", "d"}
+	if !reflect.DeepEqual(existingSts, expectedStrings) {
+		t.Fatalf("Expected %v, got %v", expectedStrings, existingSts)
+	}
+
+	if cacheThreshold != 5 {
+		t.Fatalf("Expected 5, got %v", cacheThreshold)
+	}
+
+	if docs.Next() {
+		t.Fatal("Unexpected document")
+	}
+}
+
+func TestSortSts(t *testing.T) {
+	isSubset, STs, mapExistingToSts := sortSts([]CgmlstSt{}, []CgmlstSt{"a", "b", "c"})
+	expected := []CgmlstSt{"a", "b", "c"}
+	if !reflect.DeepEqual(STs, expected) {
+		t.Fatalf("Expected %v, got %v\n", expected, STs)
+	}
+	if isSubset {
+		t.Fatal("Wrong")
+	}
+	if len(mapExistingToSts) != 0 {
+		t.Fatal("Wrong")
+	}
+
+	isSubset, STs, mapExistingToSts = sortSts([]CgmlstSt{"b", "a"}, []CgmlstSt{"a", "b", "c"})
+	expected = []CgmlstSt{"b", "a", "c"}
+	if !reflect.DeepEqual(STs, expected) {
+		t.Fatalf("Expected %v, got %v\n", expected, STs)
+	}
+	if !isSubset {
+		t.Fatal("Wrong")
+	}
+	if len(mapExistingToSts) != 2 {
+		t.Fatal("Wrong")
+	}
+	if mapExistingToSts[0] != 0 || mapExistingToSts[1] != 1 {
+		t.Fatalf("Didn't expect %v\n", mapExistingToSts)
+	}
+
+	isSubset, STs, mapExistingToSts = sortSts([]CgmlstSt{"b", "d", "a"}, []CgmlstSt{"a", "b", "c"})
+	expected = []CgmlstSt{"b", "a", "c"}
+	if !reflect.DeepEqual(STs, expected) {
+		t.Fatalf("Expected %v, got %v\n", expected, STs)
+	}
+	if isSubset {
+		t.Fatal("Wrong")
+	}
+	if len(mapExistingToSts) != 2 {
+		t.Fatal("Wrong")
+	}
+	if mapExistingToSts[0] != 0 || mapExistingToSts[2] != 1 {
+		t.Fatalf("Didn't expect %v\n", mapExistingToSts)
+	}
+
+	isSubset, STs, mapExistingToSts = sortSts([]CgmlstSt{"b", "a", "b"}, []CgmlstSt{"c", "a", "b", "c"})
+	expected = []CgmlstSt{"b", "a", "c"}
+	if !reflect.DeepEqual(STs, expected) {
+		t.Fatalf("Expected %v, got %v\n", expected, STs)
+	}
+	if isSubset {
+		t.Fatal("Wrong")
+	}
+	if len(mapExistingToSts) != 2 {
+		t.Fatal("Wrong")
+	}
+	if mapExistingToSts[0] != 0 || mapExistingToSts[1] != 1 {
+		t.Fatalf("Didn't expect %v\n", mapExistingToSts)
+	}
+}
+
+func TestUpdateScores(t *testing.T) {
+	STs := []CgmlstSt{"a", "b", "d", "e"}
+	mapExistingToSts := map[int]int{0: 0, 1: 1, 3: 2}
+	scores := NewScores(STs)
+
+	testFile, err := os.Open("testdata/TestParseCache.bson")
+	if err != nil {
+		t.Fatal("Couldn't load test data")
+	}
+
+	docs := bsonkit.GetDocuments(testFile)
+	docs.Next()
+	if docs.Err != nil {
+		t.Fatal(docs.Err)
+	}
+	doc := docs.Doc
+
+	_, _, edgesDoc, _, err := parseCache(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := scores.UpdateFromCache(edgesDoc, mapExistingToSts); err != nil {
+		t.Fatal(err)
+	}
+
+	expectedValues := []int{5, ALMOST_INF, 1, 0, 0, 0}
+	for i, v := range expectedValues {
+		if scores.scores[i].value != v {
+			t.Fatal(i, v, scores.scores[i].value)
 		}
-		if actual.value != tc.expectedValue {
-			t.Fatalf("Got %v, expected %v", actual, tc)
-		}
-		if actual.status != tc.expectedStatus {
-			t.Fatalf("Got %v, expected %v", actual, tc)
+	}
+
+	expectedStatuses := []int{FROM_CACHE, FROM_CACHE, FROM_CACHE, PENDING, PENDING, PENDING}
+	for i, v := range expectedStatuses {
+		if scores.scores[i].status != v {
+			t.Fatal(i, v, scores.scores[i].status)
 		}
 	}
 }
@@ -222,15 +277,19 @@ func TestParse(t *testing.T) {
 	if err != nil {
 		t.Fatal("Couldn't load test data")
 	}
-	STs, IDs, profiles, scores, thresholds, err := parse(testFile, ProgressSinkHole())
+	STs, profiles, scores, maxThreshold, existingClusters, canReuseCache, err := parse(testFile, ProgressSinkHole())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(IDs) != 4 {
-		t.Fatal("Expected 4 IDs")
+	if canReuseCache != true {
+		t.Fatal("Expected true")
 	}
-	if len(STs) != 4 {
-		t.Fatal("Expected 4 STs")
+	if len(STs) != 5 {
+		t.Fatalf("Expected 5 STs, got %v", STs)
+	}
+	expected := []CgmlstSt{"a", "b", "c", "d", "e"}
+	if !reflect.DeepEqual(expected, STs) {
+		t.Fatalf("Got %v\n", STs)
 	}
 	nProfiles := 0
 	for _, seen := range profiles.seen {
@@ -241,12 +300,67 @@ func TestParse(t *testing.T) {
 	if nProfiles != 2 {
 		t.Fatalf("Expected 2 profiles, got %v\n", profiles.profiles)
 	}
-	if len(scores.scores) != 6 {
-		t.Fatal("Expected 6 scores")
+	if len(scores.scores) != 10 {
+		t.Fatal("Expected 10 scores")
 	}
-	expectedThresholds := []int{5, 50, 200, 500}
-	if !reflect.DeepEqual(expectedThresholds, thresholds) {
-		t.Fatalf("Expected thresholds %v, got %v", expectedThresholds, thresholds)
+	if maxThreshold != 5 {
+		t.Fatalf("Expected 50, got %v\n", maxThreshold)
+	}
+	if scores.scores[0].value != 5 {
+		t.Fatalf("Got %v", scores.scores[0])
+	}
+	if scores.scores[3].value != ALMOST_INF {
+		t.Fatalf("Got %v", scores.scores[3])
+	}
+	if scores.scores[6].status != PENDING {
+		t.Fatalf("Got %v", scores.scores[6])
+	}
+	if existingClusters.nItems != 4 {
+		t.Fatalf("Got %v\n", existingClusters.nItems)
+	}
+}
+
+func TestParseNoCache(t *testing.T) {
+	testFile, err := os.Open("testdata/TestParseNoCache.bson")
+	if err != nil {
+		t.Fatal("Couldn't load test data")
+	}
+	STs, profiles, scores, maxThreshold, existingClusters, canReuseCache, err := parse(testFile, ProgressSinkHole())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if canReuseCache == true {
+		t.Fatal("Expected false")
+	}
+	if len(STs) != 5 {
+		t.Fatalf("Expected 5 STs, got %v", STs)
+	}
+	expected := []CgmlstSt{"a", "e", "b", "c", "d"}
+	if !reflect.DeepEqual(expected, STs) {
+		t.Fatalf("Got %v\n", STs)
+	}
+	nProfiles := 0
+	for _, seen := range profiles.seen {
+		if seen {
+			nProfiles++
+		}
+	}
+	if nProfiles != 2 {
+		t.Fatalf("Expected 2 profiles, got %v\n", profiles.seen)
+	}
+	if len(scores.scores) != 10 {
+		t.Fatal("Expected 10 scores")
+	}
+	if maxThreshold != 5 {
+		t.Fatalf("Expected 50, got %v\n", maxThreshold)
+	}
+	for _, score := range scores.scores {
+		if score.status != PENDING {
+			t.Fatalf("Got %v", score)
+		}
+	}
+	if existingClusters.nItems != 0 {
+		t.Fatalf("Got %v\n", existingClusters.nItems)
 	}
 }
 
@@ -256,9 +370,12 @@ func TestAllParse(t *testing.T) {
 	if err != nil {
 		t.Fatal("Couldn't load test data")
 	}
-	STs, _, profiles, scores, thresholds, err := parse(testFile, ProgressSinkHole())
+	STs, profiles, scores, maxThreshold, _, canReuseCache, err := parse(testFile, ProgressSinkHole())
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !canReuseCache {
+		t.Fatal("Expected true")
 	}
 	p, err := profiles.Get("000000000000000000005000")
 	if err != nil {
@@ -276,9 +393,8 @@ func TestAllParse(t *testing.T) {
 	if actual, expected := len(scores.scores), nSTs*(nSTs-1)/2; actual != expected {
 		t.Fatalf("Expected %d scores, got %d\n", expected, actual)
 	}
-	expectedThresholds := []int{5, 50, 200, 500}
-	if !reflect.DeepEqual(expectedThresholds, thresholds) {
-		t.Fatalf("Expected thresholds %v, got %v", expectedThresholds, thresholds)
+	if maxThreshold != 50 {
+		t.Fatalf("Expected 50, got %v\n", maxThreshold)
 	}
 }
 
@@ -444,33 +560,6 @@ func TestGetScore(t *testing.T) {
 			t.Fatal(err)
 		} else if v.stA != tc.a || v.stB != tc.b {
 			t.Fatalf("Expected %v, got %v\n", tc, v)
-		}
-	}
-}
-
-func BenchmarkBsonScores(b *testing.B) {
-	stsFile, err := os.Open("testdata/scoresDocSts.csv")
-	if err != nil {
-		b.Fatal("Couldn't load test data")
-	}
-	r := csv.NewReader(stsFile)
-	sts, err := r.Read()
-	if err != nil {
-		b.Error(err)
-	}
-	store := NewScores(sts)
-
-	testFile, err := os.Open("testdata/scoresDoc.bson")
-	if err != nil {
-		b.Fatal("Couldn't load test data")
-	}
-	docs := bsonkit.GetDocuments(testFile)
-	docs.Next()
-	doc := docs.Doc
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		if err := updateScores(store, doc); err != nil {
-			b.Error(err)
 		}
 	}
 }

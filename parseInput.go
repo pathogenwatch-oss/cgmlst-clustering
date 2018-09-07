@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"strconv"
 	"sync"
+	"sync/atomic"
 
 	"gitlab.com/cgps/bsonkit"
 )
@@ -21,54 +23,89 @@ type CgmlstSt = string
 type M = map[string]interface{}
 type L = []interface{}
 
-func updateScores(scores scoresStore, s *bsonkit.Document) error {
-	var (
-		stA, stB CgmlstSt
-		score    int32
-	)
+func parseCgmlstStSlice(d *bsonkit.Document) (output []CgmlstSt, err error) {
+	d.Seek(0)
+	output = make([]CgmlstSt, 0, 1000)
+	var v CgmlstSt
+	for d.Next() {
+		if err = d.Value(&v); err != nil {
+			return
+		}
+		output = append(output, v)
+	}
+	if d.Err != nil {
+		err = d.Err
+		return
+	}
+	return
+}
 
-	scoresDoc := new(bsonkit.Document)
+func parseIntSlice(d *bsonkit.Document) (output []int, err error) {
+	d.Seek(0)
+	output = make([]int, 0, 1000)
+	var v int32
+	for d.Next() {
+		if err = d.Value(&v); err != nil {
+			return
+		}
+		output = append(output, int(v))
+	}
+	if d.Err != nil {
+		err = d.Err
+		return
+	}
+	return
+}
 
-	s.Seek(0)
-	for s.Next() {
-		switch string(s.Key()) {
-		case "st":
-			if err := s.Value(&stA); err != nil {
-				return errors.New("Couldn't parse st")
-			}
-		case "alleleDifferences":
-			if err := s.Value(scoresDoc); err != nil {
-				return errors.New("Couldn't parse alleleDifferences")
-			}
+func parseCache(cacheDoc *bsonkit.Document) (existingClusters Clusters, existingSts []CgmlstSt, edgesDoc *bsonkit.Document, threshold int, err error) {
+	cacheDoc.Seek(0)
+	piDoc := new(bsonkit.Document)
+	lambdaDoc := new(bsonkit.Document)
+	stsDoc := new(bsonkit.Document)
+	edgesDoc = new(bsonkit.Document)
+
+	for cacheDoc.Next() {
+		switch string(cacheDoc.Key()) {
+		case "pi":
+			err = cacheDoc.Value(piDoc)
+		case "lambda":
+			err = cacheDoc.Value(lambdaDoc)
+		case "STs":
+			err = cacheDoc.Value(stsDoc)
+		case "edges":
+			err = cacheDoc.Value(edgesDoc)
+		case "threshold":
+			var v int32
+			err = cacheDoc.Value(&v)
+			threshold = int(v)
+		}
+		if err != nil {
+			return
 		}
 	}
-	if s.Err != nil {
-		return s.Err
-	}
-	if stA == "" {
-		return errors.New("Couldn't find a st")
-	}
-	stAIdx, ok := scores.lookup[stA]
-	if !ok {
-		return errors.New("Couldn't lookup a st")
+	if cacheDoc.Err != nil {
+		err = cacheDoc.Err
+		return
 	}
 
-	for scoresDoc.Next() {
-		stB = string(scoresDoc.Key())
-		stBIdx, ok := scores.lookup[stB]
-		if !ok {
-			return errors.New("Couldn't lookup a st")
-		}
-		if err := scoresDoc.Value(&score); err != nil {
-			return errors.New("Couldn't parse score")
-		}
-		scores.Set(stAIdx, stBIdx, int(score), FROM_CACHE)
+	if existingClusters.pi, err = parseIntSlice(piDoc); err != nil {
+		return
 	}
-	if scoresDoc.Err != nil {
-		return scoresDoc.Err
+	if existingClusters.lambda, err = parseIntSlice(lambdaDoc); err != nil {
+		return
+	}
+	if existingSts, err = parseCgmlstStSlice(stsDoc); err != nil {
+		return
 	}
 
-	return nil
+	if len(existingClusters.pi) != len(existingClusters.lambda) {
+		err = errors.New("Expected the same length of pi and lambda")
+	}
+	if len(existingClusters.pi) != len(existingSts) {
+		err = errors.New("Expected the same length of pi and STs")
+	}
+	existingClusters.nItems = len(existingClusters.pi)
+	return
 }
 
 type Profile struct {
@@ -138,6 +175,7 @@ type scoresStore struct {
 	lookup map[CgmlstSt]int
 	scores []scoreDetails
 	STs    []CgmlstSt
+	todo   int32
 }
 
 func NewScores(STs []CgmlstSt) (s scoresStore) {
@@ -155,6 +193,7 @@ func NewScores(STs []CgmlstSt) (s scoresStore) {
 			idx++
 		}
 	}
+	s.todo = int32(len(s.scores))
 	return
 }
 
@@ -177,6 +216,7 @@ func (s *scoresStore) Set(stA int, stB int, score int, status int) error {
 	}
 	s.scores[idx].value = score
 	s.scores[idx].status = status
+	atomic.AddInt32(&s.todo, -1)
 	return nil
 }
 
@@ -202,25 +242,113 @@ func (s scoresStore) Distances() ([]int, error) {
 	return distances, nil
 }
 
-func parseGenomeDoc(doc *bsonkit.Document) (STs []CgmlstSt, IDs []GenomeSTPair, thresholds []int, err error) {
-	IDs = make([]GenomeSTPair, 0, 100)
-	STs = make([]string, 0, 100)
-	thresholds = make([]int, 0, 10)
+func (s scoresStore) Todo() int32 {
+	return s.todo
+}
 
-	seenSTs := make(map[CgmlstSt]bool)
-	d := new(bsonkit.Document)
-	genomes := new(bsonkit.Document)
-	thresholdsDoc := new(bsonkit.Document)
-	var foundGenomes, foundThresholds bool
+func (s *scoresStore) UpdateFromCache(doc *bsonkit.Document, mapExistingToSts map[int]int) (err error) {
+	doc.Seek(0)
+	var (
+		distance                 int
+		aInExisting, bInExisting int32
+		aInSts, bInSts           int
+		found                    bool
+		maxExisting              int
+	)
+	listOfPairs := new(bsonkit.Document)
+	pairOfSts := new(bsonkit.Document)
+
+	for _, v := range mapExistingToSts {
+		if v > maxExisting {
+			maxExisting = v
+		}
+	}
+	for doc.Next() {
+		if distance, err = strconv.Atoi(string(doc.Key())); err != nil {
+			break
+		}
+		if err = doc.Value(listOfPairs); err != nil {
+			break
+		}
+		for listOfPairs.Next() {
+			if err = listOfPairs.Value(pairOfSts); err != nil {
+				break
+			}
+
+			if !pairOfSts.Next() {
+				err = errors.New("Expected a pair of STs")
+				break
+			}
+			if err = pairOfSts.Value(&aInExisting); err != nil {
+				break
+			}
+
+			if !pairOfSts.Next() {
+				err = errors.New("Expected a pair of STs")
+				break
+			}
+			if err = pairOfSts.Value(&bInExisting); err != nil {
+				break
+			}
+
+			if pairOfSts.Next() {
+				err = errors.New("Expected a pair of STs")
+				break
+			}
+			if pairOfSts.Err != nil {
+				err = pairOfSts.Err
+				break
+			}
+
+			if aInSts, found = mapExistingToSts[int(aInExisting)]; !found {
+				continue
+			}
+			if bInSts, found = mapExistingToSts[int(bInExisting)]; !found {
+				continue
+			}
+			if err = s.Set(aInSts, bInSts, distance, FROM_CACHE); err != nil {
+				break
+			}
+		}
+		if err != nil {
+			break
+		}
+		if listOfPairs.Err != nil {
+			err = listOfPairs.Err
+			break
+		}
+	}
+	if err != nil {
+		return
+	}
+	if doc.Err != nil {
+		err = doc.Err
+		return
+	}
+	maxToSet := maxExisting * (maxExisting + 1) / 2
+	for idx := 0; idx < maxToSet; idx++ {
+		if s.scores[idx].status != FROM_CACHE {
+			s.scores[idx].value = ALMOST_INF
+			s.scores[idx].status = FROM_CACHE
+			atomic.AddInt32(&s.todo, -1)
+		}
+	}
+	return
+}
+
+func parseRequestDoc(doc *bsonkit.Document) (STs []CgmlstSt, maxThreshold int, err error) {
+	stsDoc := new(bsonkit.Document)
+	var foundSts bool
 
 	doc.Seek(0)
 	for doc.Next() {
-		if string(doc.Key()) == "genomes" {
-			err = doc.Value(genomes)
-			foundGenomes = true
-		} else if string(doc.Key()) == "thresholds" {
-			err = doc.Value(thresholdsDoc)
-			foundThresholds = true
+		if string(doc.Key()) == "STs" {
+			err = doc.Value(stsDoc)
+			foundSts = true
+		} else if string(doc.Key()) == "maxThreshold" {
+			var v int32
+			err = doc.Value(&v)
+			maxThreshold = int(v)
 		}
 		if err != nil {
 			return
@@ -228,78 +356,16 @@ func parseGenomeDoc(doc *bsonkit.Document) (STs []CgmlstSt, IDs []GenomeSTPair, 
 	}
 	if doc.Err != nil {
 		err = doc.Err
-		return
-	} else if err != nil {
-		return
-	} else if !foundGenomes {
-		err = errors.New("Expected genome field in document")
-		return
-	} else if !foundThresholds {
-		err = errors.New("Expected thresholds field in document")
+	} else if !foundSts {
+		err = errors.New("Expected sts field in document")
+	} else if maxThreshold == 0 {
+		err = errors.New("Expected maxThreshold field in document")
+	}
+	if err != nil {
 		return
 	}
 
-	for genomes.Next() {
-		if err = genomes.Value(d); err != nil {
-			return
-		}
-
-		var (
-			id           GenomeID
-			ST           CgmlstSt
-			setST, setID bool
-		)
-
-		for d.Next() {
-			switch string(d.Key()) {
-			case "st":
-				if err = d.Value(&ST); err != nil {
-					return
-				}
-				setST = true
-			case "_id":
-				if err = d.Value(&id); err != nil {
-					return
-				}
-				setID = true
-			}
-		}
-
-		if d.Err != nil {
-			err = d.Err
-			return
-		} else if !setST || !setID {
-			err = errors.New("Couldn't parse genome ids")
-			return
-		}
-
-		IDs = append(IDs, GenomeSTPair{id, ST})
-		if _, seen := seenSTs[ST]; !seen {
-			seenSTs[ST] = true
-			STs = append(STs, ST)
-		}
-	}
-
-	if genomes.Err != nil {
-		err = genomes.Err
-		return
-	}
-
-	for thresholdsDoc.Next() {
-		var threshold int32
-		if err = thresholdsDoc.Value(&threshold); err != nil {
-			return
-		}
-
-		thresholds = append(thresholds, int(threshold))
-	}
-
-	if thresholdsDoc.Err != nil {
-		err = thresholdsDoc.Err
-	} else if len(thresholds) == 0 {
-		err = errors.New("Expected at least one threshold")
-	}
-
+	STs, err = parseCgmlstStSlice(stsDoc)
 	return
 }
 
@@ -399,24 +465,67 @@ type GenomeSTPair struct {
 	ST CgmlstSt
 }
 
-func parse(r io.Reader, progress chan ProgressEvent) (STs []CgmlstSt, IDs []GenomeSTPair, profiles ProfileStore, scores scoresStore, thresholds []int, err error) {
+func sortSts(existing []CgmlstSt, requested []CgmlstSt) (isSubset bool, output []CgmlstSt, mapExistingToOutput map[int]int) {
+	// We have a list of STs in the 'existing' cache and a list of 'requested' STs.
+	// If 'existing' is a subset of 'requested' we can reuse the cache, otherwise we can't
+
+	// We need a deduplicated list of all of the STs.  To reuse the cache, the 'existing' STs
+	// must come first and their order must be preserved.
+
+	// Then, to use the existing edges, we need a map between their position in 'existing' and
+	// their position in the 'output'.  Normally that'll be 1->1, 2->2 except when one of
+	// them is deleted and then it goes 1->1, 3->2, 4->3 etc.
+	if len(existing) == 0 {
+		return false, requested, make(map[int]int)
+	}
+	isSubset = true // We're optimistic
+	output = make([]CgmlstSt, 0, len(existing)+len(requested))
+	// Seen is a bit overloaded
+	// If it's false, we know its one of the requested STs but not yet in the output
+	// If it's true, it's one of the requested STs and it's already in the output
+	// If it's not set, it isn't one of the requested STs.
+	seen := make(map[CgmlstSt]bool)
+	for _, st := range requested {
+		seen[st] = false
+	}
+	mapExistingToOutput = make(map[int]int)
+	for i, st := range existing {
+		if duplicate, found := seen[st]; found && !duplicate {
+			output = append(output, st)
+			mapExistingToOutput[i] = len(output) - 1
+			seen[st] = true
+		} else {
+			isSubset = false
+		}
+	}
+	for _, st := range requested {
+		if alreadyInOutput := seen[st]; !alreadyInOutput {
+			output = append(output, st)
+		}
+		seen[st] = true // true means it's in the requested STs
+	}
+	return
+}
+
+func parse(r io.Reader, progress chan ProgressEvent) (STs []CgmlstSt, profiles ProfileStore, scores scoresStore, maxThreshold int, existingClusters Clusters, canReuseCache bool, err error) {
 	progress <- ProgressEvent{PARSING_STARTED, 0}
 	defer func() { progress <- ProgressEvent{PARSING_COMPLETE, 0} }()
 	err = nil
 	errChan := make(chan error)
 	numWorkers := 5
-	var wg sync.WaitGroup
+	var workerWg, docsWg sync.WaitGroup
 
 	docIter := bsonkit.GetDocuments(r)
 	docChan := make(chan *bsonkit.Document, 50)
+	docsWg.Add(2)
 	go func() {
-		defer close(docChan)
 		for docIter.Next() {
 			docChan <- docIter.Doc
 		}
 		if docIter.Err != nil {
 			errChan <- docIter.Err
 		}
+		docsWg.Done()
 	}()
 
 	var firstDoc *bsonkit.Document
@@ -429,10 +538,10 @@ func parse(r io.Reader, progress chan ProgressEvent) (STs []CgmlstSt, IDs []Geno
 		firstDoc = d
 	}
 
+	var requestedSts []CgmlstSt
 	for firstDoc.Next() {
-		switch string(firstDoc.Key()) {
-		case "genomes":
-			STs, IDs, thresholds, err = parseGenomeDoc(firstDoc)
+		if string(firstDoc.Key()) == "STs" {
+			requestedSts, maxThreshold, err = parseRequestDoc(firstDoc)
 			if err != nil {
 				return
 			}
@@ -444,10 +553,50 @@ func parse(r io.Reader, progress chan ProgressEvent) (STs []CgmlstSt, IDs []Geno
 		return
 	}
 
-	if len(IDs) == 0 {
-		err = errors.New("No ids found in first doc")
+	if len(requestedSts) == 0 {
+		err = errors.New("No STs found in first doc")
 		return
 	}
+
+	var secondDoc *bsonkit.Document
+	select {
+	case err = <-errChan:
+		if err != nil {
+			return
+		}
+	case d := <-docChan:
+		secondDoc = d
+	}
+
+	var (
+		existingSts    []CgmlstSt
+		edgesDoc       *bsonkit.Document
+		cacheThreshold int
+	)
+	isCacheDoc := false
+	for secondDoc.Next() {
+		if string(secondDoc.Key()) == "lambda" {
+			existingClusters, existingSts, edgesDoc, cacheThreshold, err = parseCache(secondDoc)
+			if err == nil {
+				isCacheDoc = true
+			} else {
+				err = nil
+			}
+			break
+		}
+	}
+	if secondDoc.Err != nil {
+		err = secondDoc.Err
+		return
+	}
+	if !isCacheDoc {
+		secondDoc.Seek(0)
+		docChan <- secondDoc
+		existingClusters = Clusters{[]int{}, []int{}, 0}
+	}
+	docsWg.Done()
+
+	canReuseCache, STs, mapExistingToSts := sortSts(existingSts, requestedSts)
 
 	log.Printf("Found %d STs\n", len(STs))
 	progress <- ProgressEvent{PROFILES_EXPECTED, len(STs)}
@@ -455,57 +604,45 @@ func parse(r io.Reader, progress chan ProgressEvent) (STs []CgmlstSt, IDs []Geno
 	scores = NewScores(STs)
 	profiles = NewProfileStore(&scores)
 
+	if isCacheDoc && cacheThreshold >= maxThreshold {
+		// We should add the edges from the edge doc
+		if err := scores.UpdateFromCache(edgesDoc, mapExistingToSts); err != nil {
+			errChan <- err
+		}
+	}
+
 	worker := func(workerID int) {
 		nDocs := 0
 		nProfiles := 0
-		nScores := 0
-		defer wg.Done()
+		defer workerWg.Done()
 		defer func() {
-			log.Printf("Worker %d finished parsing %d scores and %d profile docs\n", workerID, nScores, nProfiles)
+			log.Printf("Worker %d finished parsing %d profile docs\n", workerID, nProfiles)
 		}()
 
 		log.Printf("Worker %d started\n", workerID)
 
 		for doc := range docChan {
-			for doc.Next() {
-				switch string(doc.Key()) {
-				case "alleleDifferences":
-					if err := updateScores(scores, doc); err != nil {
-						errChan <- err
-						return
-					}
-					nScores++
-					break
-				case "results":
-					if duplicate, err := updateProfiles(profiles, doc); err != nil {
-						errChan <- err
-						return
-					} else if !duplicate {
-						progress <- ProgressEvent{PROFILE_PARSED, 1}
-					}
-					nProfiles++
-					break
-				}
-			}
-			if doc.Err != nil {
-				errChan <- doc.Err
-				return
+			if duplicate, err := updateProfiles(profiles, doc); err == nil && !duplicate {
+				nProfiles++
+				progress <- ProgressEvent{PROFILE_PARSED, 1}
 			}
 			nDocs++
 			if nDocs%100 == 0 {
-				log.Printf("Worker %d parsed %d scores and %d profile docs\n", workerID, nScores, nProfiles)
+				log.Printf("Worker %d parsed %d profile docs\n", workerID, nProfiles)
 			}
 		}
 	}
 
 	for workerID := 0; workerID < numWorkers; workerID++ {
-		wg.Add(1)
+		workerWg.Add(1)
 		go worker(workerID)
 	}
+	docsWg.Wait()
+	close(docChan)
 
 	done := make(chan bool)
 	go func() {
-		wg.Wait()
+		workerWg.Wait()
 		done <- true
 		return
 	}()
