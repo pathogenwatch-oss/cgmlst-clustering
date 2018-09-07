@@ -414,15 +414,11 @@ func TestRead(t *testing.T) {
 		t.Fatal(doc.Err)
 	}
 
-	scores := 0
 	profiles := 0
 	for docs.Next() {
 		doc = docs.Doc
 		for doc.Next() {
-			if string(doc.Key()) == "alleleDifferences" {
-				scores++
-				break
-			} else if string(doc.Key()) == "results" {
+			if string(doc.Key()) == "results" {
 				profiles++
 				break
 			}
@@ -437,9 +433,6 @@ func TestRead(t *testing.T) {
 
 	if profiles != 7000 {
 		t.Fatalf("Expected 10000 profiles, got %d\n", profiles)
-	}
-	if scores != 5572 {
-		t.Fatalf("Expected 5572 alleleDifferences got %d\n", scores)
 	}
 }
 

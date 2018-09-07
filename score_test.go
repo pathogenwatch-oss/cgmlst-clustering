@@ -201,7 +201,7 @@ func TestScoreAllFakeData(t *testing.T) {
 		t.Fatal("Couldn't load test data")
 	}
 
-	_, _, profiles, scores, _, err := parse(testFile, ProgressSinkHole())
+	_, profiles, scores, _, _, _, err := parse(testFile, ProgressSinkHole())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,37 +243,5 @@ func TestScoreAllFakeData(t *testing.T) {
 	for _, threshold := range thresholds {
 		c := clusters.Get(threshold)
 		log.Println(threshold, countClusters(c))
-	}
-}
-
-func count(c chan CacheOutput) int {
-	docs := 0
-	done := false
-	for !done {
-		select {
-		case <-c:
-			docs++
-		default:
-			done = true
-		}
-	}
-	return docs
-}
-
-func TestCount(t *testing.T) {
-	cacheDocs := make(chan CacheOutput, 10)
-	if count(cacheDocs) != 0 {
-		t.Fatal("Expected no docs")
-	}
-	cacheDocs <- CacheOutput{}
-	if count(cacheDocs) != 1 {
-		t.Fatal("Expected one doc")
-	}
-	cacheDocs <- CacheOutput{}
-	cacheDocs <- CacheOutput{}
-	cacheDocs <- CacheOutput{}
-	cacheDocs <- CacheOutput{}
-	if count(cacheDocs) != 4 {
-		t.Fatal("Expected four docs")
 	}
 }
