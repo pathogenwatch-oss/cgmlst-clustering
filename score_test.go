@@ -7,15 +7,6 @@ import (
 	"testing"
 )
 
-func CacheSinkHole() chan CacheOutput {
-	hole := make(chan CacheOutput)
-	go func() {
-		for range hole {
-		}
-	}()
-	return hole
-}
-
 func TestIndexer(t *testing.T) {
 	lookup := make(map[CgmlstSt]int)
 	lookup["abc123"] = 0
@@ -161,9 +152,7 @@ func TestScoreAll(t *testing.T) {
 	for _, p := range testProfiles {
 		profiles.Add(p)
 	}
-	scoreCache := MakeScoreCacher(&scores, CacheSinkHole())
-
-	scoreComplete, errChan := scoreAll(scores, profiles, ProgressSinkHole(), scoreCache)
+	scoreComplete, errChan := scoreAll(scores, profiles, ProgressSinkHole())
 	select {
 	case err := <-errChan:
 		if err != nil {
@@ -216,8 +205,7 @@ func TestScoreAllFakeData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	scoreCache := MakeScoreCacher(&scores, CacheSinkHole())
-	scoreComplete, errChan := scoreAll(scores, profiles, ProgressSinkHole(), scoreCache)
+	scoreComplete, errChan := scoreAll(scores, profiles, ProgressSinkHole())
 	select {
 	case err := <-errChan:
 		if err != nil {
@@ -288,92 +276,4 @@ func TestCount(t *testing.T) {
 	if count(cacheDocs) != 4 {
 		t.Fatal("Expected four docs")
 	}
-}
-
-func TestScoreCacher(t *testing.T) {
-	cacheDocs := make(chan CacheOutput, 10)
-	scores := NewScores([]string{"a", "b", "c", "d"})
-	for idx := range scores.scores {
-		scores.scores[idx].status = COMPLETE
-	}
-	scoreCache := MakeScoreCacher(&scores, cacheDocs)
-	scoreCache.Done(1)
-	scoreCache.Done(2)
-	scoreCache.Done(3)
-	docs := count(cacheDocs)
-	if docs != 1 {
-		t.Fatal("Expected a doc")
-	}
-	scoreCache.Done(3)
-	scoreCache.Done(2)
-	scoreCache.Done(3)
-	docs = count(cacheDocs)
-	if docs != 2 {
-		t.Fatal("Expected two more docs")
-	}
-}
-
-func TestScoreCacheOutput(t *testing.T) {
-	STs := []string{"a", "b", "c", "d"}
-	scores := NewScores(STs)
-	testCases := []scoreDetails{
-		{1, 0, 0, COMPLETE},
-		{2, 0, 1, COMPLETE},
-		{2, 1, 2, COMPLETE},
-		{3, 0, 3, COMPLETE},
-		{3, 1, 4, COMPLETE},
-		{3, 2, 5, COMPLETE},
-	}
-	expected := []CacheOutput{
-		{"b", map[string]int{"a": 0}},
-		{"d", map[string]int{"a": 3, "b": 4, "c": 5}},
-		{"c", map[string]int{"a": 1, "b": 2}},
-	}
-
-	for _, tc := range testCases {
-		scores.Set(tc.stA, tc.stB, tc.value, tc.status)
-	}
-	output := make(chan CacheOutput, 10)
-	scoreCache := MakeScoreCacher(&scores, output)
-	scoreCache.Done(1)
-	scoreCache.Done(2)
-	scoreCache.Done(3)
-	scoreCache.Done(3)
-	scoreCache.Done(3)
-	scoreCache.Done(2)
-
-	var (
-		actual CacheOutput
-		more   bool
-	)
-
-	for _, tc := range expected {
-		select {
-		case actual, more = <-output:
-			if !more {
-				t.Fatal("Expected more")
-			}
-		default:
-			t.Fatal("Expected another doc")
-		}
-
-		if tc.ST != actual.ST {
-			t.Fatalf("Expected %v, got %v", tc, actual)
-		}
-		if len(tc.AlleleDifferences) != len(actual.AlleleDifferences) {
-			t.Fatalf("Expected %v, got %v", tc, actual)
-		}
-		for k, v := range tc.AlleleDifferences {
-			if v != actual.AlleleDifferences[k] {
-				t.Fatalf("Expected %v, got %v", tc, actual)
-			}
-		}
-	}
-
-	select {
-	case <-output:
-		t.Fatal("Expected no more")
-	default:
-	}
-
 }
