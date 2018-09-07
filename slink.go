@@ -15,7 +15,20 @@ type Clusters struct {
 	nItems int
 }
 
+type ClusterOutput struct {
+	Pi        []int           `json:"pi"`
+	Lambda    []int           `json:"lambda"`
+	Sts       []string        `json:"STs"`
+	Threshold int             `json:"threshold"`
+	Edges     map[int][][]int `json:"edges"`
+}
+
 func NewClusters(nItems int, distances []int) (c Clusters, err error) {
+	var existing Clusters
+	return UpdateClusters(existing, nItems, distances)
+}
+
+func UpdateClusters(existing Clusters, nItems int, distances []int) (c Clusters, err error) {
 	// If items are {a, b, c, d, e} then the distances between them should be arranged:
 	// distances := {
 	// 	(a => b),
@@ -28,10 +41,22 @@ func NewClusters(nItems int, distances []int) (c Clusters, err error) {
 		err = errors.New("Wrong number of distances given")
 		return
 	}
+	if existing.nItems > nItems {
+		err = errors.New("Output cluster should be bigger than input cluster")
+		return
+	} else if existing.nItems == nItems {
+		c = existing
+		return
+	}
 
 	c.pi = make([]int, nItems)
 	c.lambda = make([]int, nItems)
 	c.nItems = nItems
+
+	if existing.nItems > 0 {
+		copy(c.pi, existing.pi)
+		copy(c.lambda, existing.lambda)
+	}
 
 	// Uses the SLINK algorithm for single linkage clustering
 	// http://www.cs.gsu.edu/~wkim/index_files/papers/sibson.pdf
@@ -45,10 +70,10 @@ func NewClusters(nItems int, distances []int) (c Clusters, err error) {
 	// pi[i] is the biggest object in the cluster it joins
 
 	M := make([]int, nItems)
-	mStart := 0
-	mEnd := 0
+	mStart := existing.nItems * (existing.nItems - 1) / 2
+	mEnd := mStart
 
-	for n := 0; n < nItems; n++ {
+	for n := existing.nItems; n < nItems; n++ {
 		// We build up pi and lambda by adding each datum in increasing size
 
 		// If the sequences are {a, b, c, d}
@@ -88,6 +113,25 @@ func NewClusters(nItems int, distances []int) (c Clusters, err error) {
 	return
 }
 
+func (c Clusters) Format(threshold int, distances []int, sts []CgmlstSt) (output ClusterOutput) {
+	edges := make(map[int][][]int)
+	idx := 0
+	for i := 1; i < c.nItems; i++ {
+		for j := 0; j < i; j++ {
+			if distances[idx] <= threshold {
+				if atThreshold, found := edges[distances[idx]]; found {
+					edges[distances[idx]] = append(atThreshold, []int{j, i})
+				} else {
+					edges[distances[idx]] = [][]int{{j, i}}
+				}
+			}
+			idx++
+		}
+	}
+	return ClusterOutput{c.pi, c.lambda, sts, threshold, edges}
+}
+
+// This isn't used except for testing
 func (c Clusters) Get(threshold int) []int {
 	clusterIDs := make([]int, c.nItems)
 	for i := len(clusterIDs) - 1; i >= 0; i-- {

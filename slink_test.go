@@ -4,10 +4,11 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"reflect"
 	"testing"
 )
 
-func compareClusters(t *testing.T, actual []int, expected []int) {
+func compareSlices(t *testing.T, actual []int, expected []int) {
 	if len(actual) != len(expected) {
 		t.Fatalf("%v != %v\n", actual, expected)
 	}
@@ -41,11 +42,11 @@ func TestGet(t *testing.T) {
 	}
 	value := clusters.Get(1)
 	expected := []int{1, 1, 2, 4, 4, 5}
-	compareClusters(t, value, expected)
+	compareSlices(t, value, expected)
 
 	value = clusters.Get(2)
 	expected = []int{4, 4, 4, 4, 4, 5}
-	compareClusters(t, value, expected)
+	compareSlices(t, value, expected)
 }
 
 func TestAnotherGet(t *testing.T) {
@@ -77,35 +78,131 @@ func TestAnotherGet(t *testing.T) {
 
 	value := clusters.Get(1)
 	expected := []int{0, 1, 2, 3, 4, 5, 6}
-	compareClusters(t, value, expected)
+	compareSlices(t, value, expected)
 
 	value = clusters.Get(2)
 	expected = []int{1, 1, 2, 3, 4, 5, 6}
-	compareClusters(t, value, expected)
+	compareSlices(t, value, expected)
 
 	value = clusters.Get(3)
 	expected = []int{1, 1, 3, 3, 4, 5, 6}
-	compareClusters(t, value, expected)
+	compareSlices(t, value, expected)
 
 	value = clusters.Get(4)
 	expected = []int{4, 4, 5, 5, 4, 5, 6}
-	compareClusters(t, value, expected)
+	compareSlices(t, value, expected)
 
 	value = clusters.Get(5)
 	expected = []int{6, 6, 6, 6, 6, 6, 6}
-	compareClusters(t, value, expected)
+	compareSlices(t, value, expected)
 
 	value = clusters.Get(6)
 	expected = []int{6, 6, 6, 6, 6, 6, 6}
-	compareClusters(t, value, expected)
+	compareSlices(t, value, expected)
 
 	value = clusters.Get(17)
 	expected = []int{6, 6, 6, 6, 6, 6, 6}
-	compareClusters(t, value, expected)
+	compareSlices(t, value, expected)
 
 	value = clusters.Get(100)
 	expected = []int{6, 6, 6, 6, 6, 6, 6}
-	compareClusters(t, value, expected)
+	compareSlices(t, value, expected)
+}
+
+func TestUpdate(t *testing.T) {
+	// A-2       3-D
+	// 	 |       |
+	// 	 B-5-G-5-C
+	// 	 |       |
+	// E-4       4-F
+	distances := []scoreDetails{
+		{0, 1, 2, COMPLETE},
+		{0, 2, 12, COMPLETE}, {1, 2, 10, COMPLETE},
+		{0, 3, 15, COMPLETE}, {1, 3, 13, COMPLETE}, {2, 3, 3, COMPLETE},
+		{0, 4, 6, COMPLETE}, {1, 4, 4, COMPLETE}, {2, 4, 14, COMPLETE}, {3, 4, 17, COMPLETE},
+		{0, 5, 16, COMPLETE}, {1, 5, 14, COMPLETE}, {2, 5, 4, COMPLETE}, {3, 5, 7, COMPLETE}, {4, 5, 18, COMPLETE},
+		{0, 6, 7, COMPLETE}, {1, 6, 5, COMPLETE}, {2, 6, 5, COMPLETE}, {3, 6, 8, COMPLETE}, {4, 6, 9, COMPLETE}, {5, 6, 9, COMPLETE},
+	}
+
+	scores := scoresStore{scores: distances, STs: []string{"a", "b", "c", "d", "e", "f", "g"}}
+	distanceValues, _ := scores.Distances()
+
+	partial, err := NewClusters(3, distanceValues[:3])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected_lambda := []int{2, 10, ALMOST_INF}
+	expected_pi := []int{1, 2, 2}
+	compareSlices(t, partial.lambda, expected_lambda)
+	compareSlices(t, partial.pi, expected_pi)
+
+	complete, err := NewClusters(len(scores.STs), distanceValues)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for i := 0; i < 3; i++ {
+		distances[i] = scoreDetails{}
+	}
+	updated, err := UpdateClusters(partial, len(scores.STs), distanceValues)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected_lambda = []int{2, 4, 3, 4, 5, 5, ALMOST_INF}
+	expected_pi = []int{1, 4, 3, 5, 6, 6, 6}
+	compareSlices(t, updated.lambda, expected_lambda)
+	compareSlices(t, updated.pi, expected_pi)
+
+	compareSlices(t, updated.lambda, complete.lambda)
+	compareSlices(t, updated.pi, complete.pi)
+}
+
+func TestAnotherUpdate(t *testing.T) {
+
+	// .---3--.
+	// A-5-B-9-C-2-D
+	// |   '---1---|
+	// '-----6-----'
+
+	distances := []scoreDetails{
+		{0, 1, 5, COMPLETE},
+		{0, 2, 3, COMPLETE}, {1, 2, 9, COMPLETE},
+		{0, 3, 6, COMPLETE}, {1, 3, 1, COMPLETE}, {2, 3, 2, COMPLETE},
+	}
+
+	scores := scoresStore{scores: distances, STs: []string{"a", "b", "c", "d"}}
+	distanceValues, _ := scores.Distances()
+
+	partial, err := NewClusters(3, distanceValues[:3])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected_lambda := []int{3, 5, ALMOST_INF}
+	expected_pi := []int{2, 2, 2}
+	compareSlices(t, partial.lambda, expected_lambda)
+	compareSlices(t, partial.pi, expected_pi)
+
+	complete, err := NewClusters(len(scores.STs), distanceValues)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for i := 0; i < 3; i++ {
+		distances[i] = scoreDetails{}
+	}
+	updated, err := UpdateClusters(partial, len(scores.STs), distanceValues)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected_lambda = []int{3, 1, 2, ALMOST_INF}
+	expected_pi = []int{3, 3, 3, 3}
+	compareSlices(t, updated.lambda, expected_lambda)
+	compareSlices(t, updated.pi, expected_pi)
+
+	compareSlices(t, updated.lambda, complete.lambda)
+	compareSlices(t, updated.pi, complete.pi)
 }
 
 func randomScores(n int, seed int64) scoresStore {
@@ -197,4 +294,19 @@ func TestLotsOfRandomClusters(t *testing.T) {
 		log.Println("Clustered at threshold:", threshold)
 	}
 
+}
+
+func TestFormat(t *testing.T) {
+	clusters := Clusters{make([]int, 5), make([]int, 5), 5}
+	distances := []int{5, 1, 9, 6, 1, 2, 1, 2, 0, 7}
+	output := clusters.Format(5, distances, []CgmlstSt{"a", "b", "c", "d", "e"})
+	expectedEdges := map[int][][]int{
+		0: {{2, 4}},
+		1: {{0, 2}, {1, 3}, {0, 4}},
+		2: {{2, 3}, {1, 4}},
+		5: {{0, 1}},
+	}
+	if !reflect.DeepEqual(expectedEdges, output.Edges) {
+		t.Fatal(output.Edges)
+	}
 }
