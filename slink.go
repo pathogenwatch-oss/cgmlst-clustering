@@ -117,10 +117,8 @@ func (c Clusters) Format(threshold int, distances []int, sts []CgmlstSt) (output
 	output = make(chan ClusterOutput, 5)
 	go func() {
 		defer close(output)
-		edges := make(map[int][][2]int)
-		output <- ClusterOutput{c.pi, c.lambda, sts, threshold, edges}
 		for t := 0; t <= threshold; t++ {
-			edges = make(map[int][][2]int)
+			edges := map[int][][2]int{}
 			atThreshold := make([][2]int, 0, 100)
 			idx := 0
 			for i := 1; i < c.nItems; i++ {
@@ -134,6 +132,7 @@ func (c Clusters) Format(threshold int, distances []int, sts []CgmlstSt) (output
 			edges[t] = atThreshold
 			output <- ClusterOutput{[]int{}, []int{}, []CgmlstSt{}, threshold, edges}
 		}
+		output <- ClusterOutput{c.pi, c.lambda, sts, threshold, map[int][][2]int{}}
 	}()
 
 	return output
