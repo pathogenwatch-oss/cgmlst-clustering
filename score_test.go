@@ -148,7 +148,7 @@ func TestScoreAll(t *testing.T) {
 
 	STs := []string{"abc123", "bcd234", "cde345"}
 	scores := NewScores(STs)
-	profiles := NewProfileStore(&scores)
+	profiles := NewProfileStore([]string{"bcd234", "abc123", "cde345"})
 	for _, p := range testProfiles {
 		profiles.Add(p)
 	}

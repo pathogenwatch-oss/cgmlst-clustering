@@ -64,7 +64,9 @@ func main() {
 		}
 	}
 
-	enc.Encode(clusters.Format(maxThreshold, distances, scores.STs))
+	for c := range clusters.Format(maxThreshold, distances, scores.STs) {
+		enc.Encode(c)
+	}
 
 	log.Printf("%d scores remaining\n", scores.Todo())
 	log.Printf("STs: %d; Scores: %d\n", len(STs), len(scores.scores))

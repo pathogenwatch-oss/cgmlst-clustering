@@ -16,11 +16,11 @@ type Clusters struct {
 }
 
 type ClusterOutput struct {
-	Pi        []int           `json:"pi"`
-	Lambda    []int           `json:"lambda"`
-	Sts       []string        `json:"STs"`
-	Threshold int             `json:"threshold"`
-	Edges     map[int][][]int `json:"edges"`
+	Pi        []int            `json:"pi"`
+	Lambda    []int            `json:"lambda"`
+	Sts       []string         `json:"STs"`
+	Threshold int              `json:"threshold"`
+	Edges     map[int][][2]int `json:"edges"`
 }
 
 func NewClusters(nItems int, distances []int) (c Clusters, err error) {
@@ -113,22 +113,30 @@ func UpdateClusters(existing Clusters, nItems int, distances []int) (c Clusters,
 	return
 }
 
-func (c Clusters) Format(threshold int, distances []int, sts []CgmlstSt) (output ClusterOutput) {
-	edges := make(map[int][][]int)
-	idx := 0
-	for i := 1; i < c.nItems; i++ {
-		for j := 0; j < i; j++ {
-			if distances[idx] <= threshold {
-				if atThreshold, found := edges[distances[idx]]; found {
-					edges[distances[idx]] = append(atThreshold, []int{j, i})
-				} else {
-					edges[distances[idx]] = [][]int{{j, i}}
+func (c Clusters) Format(threshold int, distances []int, sts []CgmlstSt) (output chan ClusterOutput) {
+	output = make(chan ClusterOutput, 5)
+	go func() {
+		defer close(output)
+		edges := make(map[int][][2]int)
+		output <- ClusterOutput{c.pi, c.lambda, sts, threshold, edges}
+		for t := 0; t <= threshold; t++ {
+			edges = make(map[int][][2]int)
+			atThreshold := make([][2]int, 0, 100)
+			idx := 0
+			for i := 1; i < c.nItems; i++ {
+				for j := 0; j < i; j++ {
+					if distances[idx] == t {
+						atThreshold = append(atThreshold, [2]int{j, i})
+					}
+					idx++
 				}
 			}
-			idx++
+			edges[t] = atThreshold
+			output <- ClusterOutput{[]int{}, []int{}, []CgmlstSt{}, threshold, edges}
 		}
-	}
-	return ClusterOutput{c.pi, c.lambda, sts, threshold, edges}
+	}()
+
+	return output
 }
 
 // This isn't used except for testing

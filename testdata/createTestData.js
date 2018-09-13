@@ -203,8 +203,11 @@ async function main() {
       pi: [2, 3, 3, 3],
       lambda: [1, 1, 2, 2147483647],
       edges: {
+        0: [],
         1: [[0, 2], [1, 3]],
         2: [[2, 3]],
+        3: [],
+        4: [],
         5: [[0, 1]]
       }
     }
@@ -236,9 +239,15 @@ async function main() {
       pi: [2, 3, 3, 3],
       lambda: [1, 1, 2, 2147483647],
       edges: {
-        1: [[0, 2], [1, 3]],
+        1: [[0, 2], [1, 3]]
+      }
+    },
+    {
+      threshold: 5,
+      edges: {
         2: [[2, 3]],
-        5: [[0, 1]]
+        0: [],
+        4: [],
       }
     },
     {
@@ -250,6 +259,13 @@ async function main() {
           { gene: "foo", id: 1 },
           { gene: "bar", id: "xyz" }
         ]
+      }
+    },
+    {
+      threshold: 5,
+      edges: {
+        3: [],
+        5: [[0, 1]]
       }
     },
     {
@@ -279,6 +295,57 @@ async function main() {
           { gene: "foo", id: 1 },
           { gene: "bar", id: "xyz" }
         ]
+      }
+    },
+    {
+      _id:        new BSON.ObjectID(4),
+      fileId:     "yyy",
+      results: {
+        st: "e",
+        matches: [
+          { gene: "foo", id: 1 },
+          { gene: "bar", id: 2 }
+        ]
+      }
+    }
+  ])
+
+  dumpBson("TestParsePartialCache.bson", [
+    {
+      STs: ["a", "e", "b", "c", "d"],
+      maxThreshold: 5
+    },
+    {
+      threshold: 5,
+      STs: ["a", "b", "c", "d"],
+      pi: [2, 3, 3, 3],
+      lambda: [1, 1, 2, 2147483647],
+      edges: {
+        1: [[0, 2], [1, 3]]
+      }
+    },
+    {
+      threshold: 5,
+      edges: {
+        4: [],
+      }
+    },
+    {
+      _id:        new BSON.ObjectID(3),
+      fileId:     "xxx",
+      results: {
+        st: "a",
+        matches: [
+          { gene: "foo", id: 1 },
+          { gene: "bar", id: "xyz" }
+        ]
+      }
+    },
+    {
+      threshold: 5,
+      edges: {
+        3: [],
+        5: [[0, 1]]
       }
     },
     {

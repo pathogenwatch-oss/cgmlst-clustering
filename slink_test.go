@@ -300,13 +300,31 @@ func TestFormat(t *testing.T) {
 	clusters := Clusters{make([]int, 5), make([]int, 5), 5}
 	distances := []int{5, 1, 9, 6, 1, 2, 1, 2, 0, 7}
 	output := clusters.Format(5, distances, []CgmlstSt{"a", "b", "c", "d", "e"})
-	expectedEdges := map[int][][]int{
+	expectedEdges := map[int][][2]int{
 		0: {{2, 4}},
 		1: {{0, 2}, {1, 3}, {0, 4}},
 		2: {{2, 3}, {1, 4}},
+		3: {},
+		4: {},
 		5: {{0, 1}},
 	}
-	if !reflect.DeepEqual(expectedEdges, output.Edges) {
-		t.Fatal(output.Edges)
+
+	count := 0
+	seen := make([]bool, 6)
+	for o := range output {
+		for distance := range o.Edges {
+			if !reflect.DeepEqual(expectedEdges[distance], o.Edges[distance]) {
+				t.Fatal(distance, o.Edges)
+			}
+			if seen[distance] {
+				t.Fatal(distance)
+			}
+			seen[distance] = true
+			count++
+		}
 	}
+	if count != 6 {
+		t.Fatal(count)
+	}
+
 }

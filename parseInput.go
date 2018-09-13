@@ -57,27 +57,56 @@ func parseIntSlice(d *bsonkit.Document) (output []int, err error) {
 	return
 }
 
-func parseCache(cacheDoc *bsonkit.Document) (existingClusters Clusters, existingSts []CgmlstSt, edgesDoc *bsonkit.Document, threshold int, err error) {
+type Cache struct {
+	sync.RWMutex
+	Pi        []int
+	Lambda    []int
+	Sts       []string
+	Threshold int
+	Edges     map[int][][2]int
+}
+
+func NewCache() Cache {
+	return Cache{Edges: make(map[int][][2]int)}
+}
+
+func (c *Cache) Update(cacheDoc *bsonkit.Document, maxThreshold int) (err error) {
 	cacheDoc.Seek(0)
 	piDoc := new(bsonkit.Document)
 	lambdaDoc := new(bsonkit.Document)
 	stsDoc := new(bsonkit.Document)
-	edgesDoc = new(bsonkit.Document)
+	edgesDoc := new(bsonkit.Document)
+
+	if c.Threshold > 0 && c.Threshold < maxThreshold {
+		return errors.New("Threshold is too small, can't use the cache")
+	}
+
+	var hasPi, hasLambda, hasSTs, hasEdges bool
 
 	for cacheDoc.Next() {
 		switch string(cacheDoc.Key()) {
 		case "pi":
+			hasPi = true
 			err = cacheDoc.Value(piDoc)
 		case "lambda":
+			hasLambda = true
 			err = cacheDoc.Value(lambdaDoc)
 		case "STs":
+			hasSTs = true
 			err = cacheDoc.Value(stsDoc)
 		case "edges":
+			hasEdges = true
 			err = cacheDoc.Value(edgesDoc)
 		case "threshold":
 			var v int32
 			err = cacheDoc.Value(&v)
-			threshold = int(v)
+			if c.Threshold > 0 && c.Threshold != int(v) {
+				err = errors.New("Already got a different threshold set for cache")
+			} else if int(v) < maxThreshold {
+				err = errors.New("Threshold is too small, can't use the cache")
+			} else {
+				c.Threshold = int(v)
+			}
 		}
 		if err != nil {
 			return
@@ -88,24 +117,152 @@ func parseCache(cacheDoc *bsonkit.Document) (existingClusters Clusters, existing
 		return
 	}
 
-	if existingClusters.pi, err = parseIntSlice(piDoc); err != nil {
-		return
-	}
-	if existingClusters.lambda, err = parseIntSlice(lambdaDoc); err != nil {
-		return
-	}
-	if existingSts, err = parseCgmlstStSlice(stsDoc); err != nil {
+	err = func() error {
+		c.Lock()
+		defer c.Unlock()
+		if hasPi {
+			if len(c.Pi) > 0 {
+				return errors.New("Already got a Pi")
+			}
+			if c.Pi, err = parseIntSlice(piDoc); err != nil {
+				return err
+			}
+		}
+		if hasLambda {
+			if len(c.Lambda) > 0 {
+				return errors.New("Already got a Lambda")
+			}
+			if c.Lambda, err = parseIntSlice(lambdaDoc); err != nil {
+				return err
+			}
+		}
+		if hasSTs {
+			if len(c.Sts) > 0 {
+				return errors.New("Already got a STs")
+			}
+			if c.Sts, err = parseCgmlstStSlice(stsDoc); err != nil {
+				return err
+			}
+		}
+		return nil
+	}()
+	if err != nil {
 		return
 	}
 
-	if len(existingClusters.pi) != len(existingClusters.lambda) {
-		err = errors.New("Expected the same length of pi and lambda")
+	if hasEdges {
+		err = c.AddEdges(edgesDoc, maxThreshold)
 	}
-	if len(existingClusters.pi) != len(existingSts) {
-		err = errors.New("Expected the same length of pi and STs")
-	}
-	existingClusters.nItems = len(existingClusters.pi)
+
 	return
+}
+
+func (c *Cache) AddEdges(doc *bsonkit.Document, maxThreshold int) (err error) {
+	doc.Seek(0)
+	var (
+		distance int
+		a, b     int32
+	)
+	listOfPairs := new(bsonkit.Document)
+	pairOfSts := new(bsonkit.Document)
+
+	for doc.Next() {
+		atDistance := make([][2]int, 0, 100)
+		if distance, err = strconv.Atoi(string(doc.Key())); err != nil {
+			break
+		}
+
+		c.RLock()
+		if _, found := c.Edges[distance]; found {
+			err = errors.New("Edges already set at this distance")
+		}
+		c.RUnlock()
+		if err != nil {
+			return err
+		}
+
+		if distance > maxThreshold {
+			continue
+		}
+		if err = doc.Value(listOfPairs); err != nil {
+			break
+		}
+		for listOfPairs.Next() {
+			if err = listOfPairs.Value(pairOfSts); err != nil {
+				break
+			}
+
+			if !pairOfSts.Next() {
+				err = errors.New("Expected a pair of STs")
+				break
+			}
+			if err = pairOfSts.Value(&a); err != nil {
+				break
+			}
+
+			if !pairOfSts.Next() {
+				err = errors.New("Expected a pair of STs")
+				break
+			}
+			if err = pairOfSts.Value(&b); err != nil {
+				break
+			}
+
+			if pairOfSts.Next() {
+				err = errors.New("Expected a pair of STs")
+				break
+			}
+			if pairOfSts.Err != nil {
+				err = pairOfSts.Err
+				break
+			}
+			atDistance = append(atDistance, [2]int{int(a), int(b)})
+		}
+		if err != nil {
+			break
+		}
+		if listOfPairs.Err != nil {
+			err = listOfPairs.Err
+			break
+		}
+		c.Lock()
+		c.Edges[distance] = atDistance
+		c.Unlock()
+	}
+	if err != nil {
+		return
+	}
+	if doc.Err != nil {
+		return doc.Err
+	}
+	return
+}
+
+func (c Cache) Check(maxThreshold int) error {
+	c.RLock()
+	defer c.RUnlock()
+	if c.Threshold == 0 {
+		return errors.New("Threshold not set")
+	}
+	if c.Threshold < maxThreshold {
+		return errors.New("Threshold is not big enough")
+	}
+	if len(c.Sts) == 0 {
+		return errors.New("Sts not set")
+	}
+	if len(c.Pi) == 0 {
+		return errors.New("Pi not set")
+	}
+	if len(c.Lambda) == 0 {
+		return errors.New("Lambda not set")
+	}
+
+	for t := 0; t <= c.Threshold; t++ {
+		if _, found := c.Edges[t]; !found {
+			return fmt.Errorf("Edges are missing at threshold of %d", t)
+		}
+	}
+	return nil
 }
 
 type Profile struct {
@@ -119,10 +276,13 @@ type ProfileStore struct {
 	seen     []bool
 }
 
-func NewProfileStore(scores *scoresStore) (profiles ProfileStore) {
-	profiles.lookup = scores.lookup
-	profiles.profiles = make([]Profile, len(scores.lookup))
-	profiles.seen = make([]bool, len(profiles.profiles))
+func NewProfileStore(STs []CgmlstSt) (profiles ProfileStore) {
+	profiles.lookup = make(map[CgmlstSt]int)
+	for i, st := range STs {
+		profiles.lookup[st] = i
+	}
+	profiles.profiles = make([]Profile, len(STs))
+	profiles.seen = make([]bool, len(STs))
 	return
 }
 
@@ -153,7 +313,7 @@ func (profiles *ProfileStore) Get(ST CgmlstSt) (Profile, error) {
 	return profiles.profiles[idx], nil
 }
 
-func updateProfiles(profiles ProfileStore, doc *bsonkit.Document) (bool, error) {
+func (profiles *ProfileStore) AddFromDoc(doc *bsonkit.Document) (bool, error) {
 	p, err := parseProfile(doc)
 	if err != nil {
 		return false, err
@@ -209,15 +369,19 @@ func (s scoresStore) getIndex(stA int, stB int) (int, error) {
 	return scoreIdx, nil
 }
 
+func (s *scoresStore) SetIdx(idx int, score int, status int) error {
+	s.scores[idx].value = score
+	s.scores[idx].status = status
+	atomic.AddInt32(&s.todo, -1)
+	return nil
+}
+
 func (s *scoresStore) Set(stA int, stB int, score int, status int) error {
 	idx, err := s.getIndex(stA, stB)
 	if err != nil {
 		return err
 	}
-	s.scores[idx].value = score
-	s.scores[idx].status = status
-	atomic.AddInt32(&s.todo, -1)
-	return nil
+	return s.SetIdx(idx, score, status)
 }
 
 func (s scoresStore) Get(stA int, stB int) (scoreDetails, error) {
@@ -246,84 +410,38 @@ func (s scoresStore) Todo() int32 {
 	return s.todo
 }
 
-func (s *scoresStore) UpdateFromCache(doc *bsonkit.Document, mapExistingToSts map[int]int) (err error) {
-	doc.Seek(0)
+func (s *scoresStore) UpdateFromCache(c Cache, mapExistingToSts map[int]int) (err error) {
 	var (
 		distance                 int
-		aInExisting, bInExisting int32
+		aInExisting, bInExisting int
 		aInSts, bInSts           int
 		found                    bool
-		maxExisting              int
 	)
-	listOfPairs := new(bsonkit.Document)
-	pairOfSts := new(bsonkit.Document)
 
+	for distance = range c.Edges {
+		pairs := c.Edges[distance]
+		for _, pair := range pairs {
+			aInExisting = pair[0]
+			bInExisting = pair[1]
+
+			if aInSts, found = mapExistingToSts[aInExisting]; !found {
+				continue
+			}
+			if bInSts, found = mapExistingToSts[bInExisting]; !found {
+				continue
+			}
+
+			if err = s.Set(aInSts, bInSts, distance, FROM_CACHE); err != nil {
+				return err
+			}
+		}
+	}
+
+	var maxExisting int
 	for _, v := range mapExistingToSts {
 		if v > maxExisting {
 			maxExisting = v
 		}
-	}
-	for doc.Next() {
-		if distance, err = strconv.Atoi(string(doc.Key())); err != nil {
-			break
-		}
-		if err = doc.Value(listOfPairs); err != nil {
-			break
-		}
-		for listOfPairs.Next() {
-			if err = listOfPairs.Value(pairOfSts); err != nil {
-				break
-			}
-
-			if !pairOfSts.Next() {
-				err = errors.New("Expected a pair of STs")
-				break
-			}
-			if err = pairOfSts.Value(&aInExisting); err != nil {
-				break
-			}
-
-			if !pairOfSts.Next() {
-				err = errors.New("Expected a pair of STs")
-				break
-			}
-			if err = pairOfSts.Value(&bInExisting); err != nil {
-				break
-			}
-
-			if pairOfSts.Next() {
-				err = errors.New("Expected a pair of STs")
-				break
-			}
-			if pairOfSts.Err != nil {
-				err = pairOfSts.Err
-				break
-			}
-
-			if aInSts, found = mapExistingToSts[int(aInExisting)]; !found {
-				continue
-			}
-			if bInSts, found = mapExistingToSts[int(bInExisting)]; !found {
-				continue
-			}
-			if err = s.Set(aInSts, bInSts, distance, FROM_CACHE); err != nil {
-				break
-			}
-		}
-		if err != nil {
-			break
-		}
-		if listOfPairs.Err != nil {
-			err = listOfPairs.Err
-			break
-		}
-	}
-	if err != nil {
-		return
-	}
-	if doc.Err != nil {
-		err = doc.Err
-		return
 	}
 	maxToSet := maxExisting * (maxExisting + 1) / 2
 	for idx := 0; idx < maxToSet; idx++ {
@@ -513,11 +631,10 @@ func parse(r io.Reader, progress chan ProgressEvent) (STs []CgmlstSt, profiles P
 	err = nil
 	errChan := make(chan error)
 	numWorkers := 5
-	var workerWg, docsWg sync.WaitGroup
+	var workerWg sync.WaitGroup
 
 	docIter := bsonkit.GetDocuments(r)
 	docChan := make(chan *bsonkit.Document, 50)
-	docsWg.Add(2)
 	go func() {
 		for docIter.Next() {
 			docChan <- docIter.Doc
@@ -525,7 +642,7 @@ func parse(r io.Reader, progress chan ProgressEvent) (STs []CgmlstSt, profiles P
 		if docIter.Err != nil {
 			errChan <- docIter.Err
 		}
-		docsWg.Done()
+		close(docChan)
 	}()
 
 	var firstDoc *bsonkit.Document
@@ -558,77 +675,52 @@ func parse(r io.Reader, progress chan ProgressEvent) (STs []CgmlstSt, profiles P
 		return
 	}
 
-	var secondDoc *bsonkit.Document
-	select {
-	case err = <-errChan:
-		if err != nil {
-			return
-		}
-	case d := <-docChan:
-		secondDoc = d
-	}
-
-	var (
-		existingSts    []CgmlstSt
-		edgesDoc       *bsonkit.Document
-		cacheThreshold int
-	)
-	isCacheDoc := false
-	for secondDoc.Next() {
-		if string(secondDoc.Key()) == "lambda" {
-			existingClusters, existingSts, edgesDoc, cacheThreshold, err = parseCache(secondDoc)
-			if err == nil {
-				isCacheDoc = true
-			} else {
-				err = nil
-			}
-			break
-		}
-	}
-	if secondDoc.Err != nil {
-		err = secondDoc.Err
-		return
-	}
-	if !isCacheDoc {
-		secondDoc.Seek(0)
-		docChan <- secondDoc
-		existingClusters = Clusters{[]int{}, []int{}, 0}
-	}
-	docsWg.Done()
-
-	canReuseCache, STs, mapExistingToSts := sortSts(existingSts, requestedSts)
-
-	log.Printf("Found %d STs\n", len(STs))
+	log.Printf("Found %d STs\n", len(requestedSts))
 	progress <- ProgressEvent{PROFILES_EXPECTED, len(STs)}
 
-	scores = NewScores(STs)
-	profiles = NewProfileStore(&scores)
-
-	if isCacheDoc && cacheThreshold >= maxThreshold {
-		// We should add the edges from the edge doc
-		if err := scores.UpdateFromCache(edgesDoc, mapExistingToSts); err != nil {
-			errChan <- err
-		}
-	}
+	cache := NewCache()
+	profiles = NewProfileStore(requestedSts)
 
 	worker := func(workerID int) {
 		nDocs := 0
 		nProfiles := 0
 		defer workerWg.Done()
 		defer func() {
-			log.Printf("Worker %d finished parsing %d profile docs\n", workerID, nProfiles)
+			log.Printf("Worker %d finished parsing %d profile docs and %d docs\n", workerID, nProfiles, nDocs)
 		}()
 
 		log.Printf("Worker %d started\n", workerID)
 
 		for doc := range docChan {
-			if duplicate, err := updateProfiles(profiles, doc); err == nil && !duplicate {
-				nProfiles++
-				progress <- ProgressEvent{PROFILE_PARSED, 1}
+			for doc.Next() {
+				switch string(doc.Key()) {
+				case "pi":
+					fallthrough
+				case "lambda":
+					fallthrough
+				case "STs":
+					fallthrough
+				case "edges":
+					fallthrough
+				case "threshold":
+					err = cache.Update(doc, maxThreshold)
+					if err != nil {
+						log.Println(err)
+					}
+					break
+				case "results":
+					if duplicate, err := profiles.AddFromDoc(doc); err == nil && !duplicate {
+						nProfiles++
+						progress <- ProgressEvent{PROFILE_PARSED, 1}
+					} else if err != nil {
+						log.Println(err)
+					}
+					break
+				}
 			}
 			nDocs++
 			if nDocs%100 == 0 {
-				log.Printf("Worker %d parsed %d profile docs\n", workerID, nProfiles)
+				log.Printf("Worker %d parsed %d profile docs and %d docs\n", workerID, nProfiles, nDocs)
 			}
 		}
 	}
@@ -637,8 +729,6 @@ func parse(r io.Reader, progress chan ProgressEvent) (STs []CgmlstSt, profiles P
 		workerWg.Add(1)
 		go worker(workerID)
 	}
-	docsWg.Wait()
-	close(docChan)
 
 	done := make(chan bool)
 	go func() {
@@ -654,6 +744,26 @@ func parse(r io.Reader, progress chan ProgressEvent) (STs []CgmlstSt, profiles P
 		}
 	case <-done:
 		log.Println("Workers have all finished")
+	}
+
+	cacheError := cache.Check(maxThreshold)
+	existingClusters = Clusters{[]int{}, []int{}, 0}
+	STs = requestedSts
+	if cacheError != nil {
+		log.Println(cacheError)
+		scores = NewScores(STs)
+	} else {
+		var mapExistingToSts map[int]int
+		canReuseCache, STs, mapExistingToSts = sortSts(cache.Sts, requestedSts)
+
+		if canReuseCache {
+			scores = NewScores(STs)
+			// We should add the edges from the edge doc
+			if err := scores.UpdateFromCache(cache, mapExistingToSts); err != nil {
+				errChan <- err
+			}
+			existingClusters = Clusters{cache.Pi, cache.Lambda, len(cache.Pi)}
+		}
 	}
 
 	return

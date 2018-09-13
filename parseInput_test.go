@@ -95,28 +95,28 @@ func TestParseCache(t *testing.T) {
 	}
 	doc := docs.Doc
 
-	existingClusters, existingSts, _, cacheThreshold, err := parseCache(doc)
-	if err != nil {
+	cache := NewCache()
+	if err = cache.Update(doc, 5); err != nil {
 		t.Fatal(err)
 	}
 
 	expected := []int{2, 3, 3, 3}
-	if !reflect.DeepEqual(existingClusters.pi, expected) {
-		t.Fatalf("Expected %v, got %v", expected, existingClusters.pi)
+	if !reflect.DeepEqual(cache.Pi, expected) {
+		t.Fatalf("Expected %v, got %v", expected, cache.Pi)
 	}
 
 	expected = []int{1, 1, 2, ALMOST_INF}
-	if !reflect.DeepEqual(existingClusters.lambda, expected) {
-		t.Fatalf("Expected %v, got %v", expected, existingClusters.lambda)
+	if !reflect.DeepEqual(cache.Lambda, expected) {
+		t.Fatalf("Expected %v, got %v", expected, cache.Lambda)
 	}
 
 	expectedStrings := []string{"a", "b", "c", "d"}
-	if !reflect.DeepEqual(existingSts, expectedStrings) {
-		t.Fatalf("Expected %v, got %v", expectedStrings, existingSts)
+	if !reflect.DeepEqual(cache.Sts, expectedStrings) {
+		t.Fatalf("Expected %v, got %v", expectedStrings, cache.Sts)
 	}
 
-	if cacheThreshold != 5 {
-		t.Fatalf("Expected 5, got %v", cacheThreshold)
+	if cache.Threshold != 5 {
+		t.Fatalf("Expected 5, got %v", cache.Threshold)
 	}
 
 	if docs.Next() {
@@ -200,11 +200,12 @@ func TestUpdateScores(t *testing.T) {
 	}
 	doc := docs.Doc
 
-	_, _, edgesDoc, _, err := parseCache(doc)
-	if err != nil {
+	cache := NewCache()
+	if err = cache.Update(doc, 5); err != nil {
 		t.Fatal(err)
 	}
-	if err := scores.UpdateFromCache(edgesDoc, mapExistingToSts); err != nil {
+
+	if err := scores.UpdateFromCache(cache, mapExistingToSts); err != nil {
 		t.Fatal(err)
 	}
 
@@ -229,8 +230,7 @@ func TestParseProfile(t *testing.T) {
 		t.Fatal("Couldn't load test data")
 	}
 
-	scores := NewScores([]string{"abc", "def"})
-	profilesStore := NewProfileStore(&scores)
+	profilesStore := NewProfileStore([]string{"def", "abc"})
 
 	docs := bsonkit.GetDocuments(testFile)
 	docs.Next()
@@ -238,7 +238,7 @@ func TestParseProfile(t *testing.T) {
 		t.Fatal(docs.Err)
 	}
 
-	if _, err := updateProfiles(profilesStore, docs.Doc); err != nil {
+	if _, err := profilesStore.AddFromDoc(docs.Doc); err != nil {
 		t.Fatal(err)
 	}
 
@@ -361,6 +361,20 @@ func TestParseNoCache(t *testing.T) {
 	}
 	if existingClusters.nItems != 0 {
 		t.Fatalf("Got %v\n", existingClusters.nItems)
+	}
+}
+
+func TestParsePartialCache(t *testing.T) {
+	testFile, err := os.Open("testdata/TestParsePartialCache.bson")
+	if err != nil {
+		t.Fatal("Couldn't load test data")
+	}
+	_, _, _, _, _, canReuseCache, err := parse(testFile, ProgressSinkHole())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if canReuseCache != false {
+		t.Fatal("Expected false")
 	}
 }
 
