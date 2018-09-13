@@ -33,7 +33,7 @@ func main() {
 			log.Printf("%d scores remaining\n", scores.Todo())
 		}
 	}()
-	scoreComplete, errChan := scoreAll(scores, profiles, progress)
+	scoreComplete, errChan := scoreAll(&scores, &profiles, progress)
 
 	select {
 	case err := <-errChan:
@@ -42,6 +42,7 @@ func main() {
 		}
 	case <-scoreComplete:
 	}
+	log.Printf("%d scores remaining\n", scores.Todo())
 
 	progress <- ProgressEvent{DISTANCES_STARTED, 0}
 	distances, err := scores.Distances()

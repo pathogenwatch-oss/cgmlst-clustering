@@ -407,7 +407,7 @@ func (s scoresStore) Distances() ([]int, error) {
 }
 
 func (s scoresStore) Todo() int32 {
-	return s.todo
+	return atomic.LoadInt32(&s.todo)
 }
 
 func (s *scoresStore) UpdateFromCache(c Cache, mapExistingToSts map[int]int) (err error) {

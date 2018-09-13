@@ -152,7 +152,7 @@ func TestScoreAll(t *testing.T) {
 	for _, p := range testProfiles {
 		profiles.Add(p)
 	}
-	scoreComplete, errChan := scoreAll(scores, profiles, ProgressSinkHole())
+	scoreComplete, errChan := scoreAll(&scores, &profiles, ProgressSinkHole())
 	select {
 	case err := <-errChan:
 		if err != nil {
@@ -205,7 +205,7 @@ func TestScoreAllFakeData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	scoreComplete, errChan := scoreAll(scores, profiles, ProgressSinkHole())
+	scoreComplete, errChan := scoreAll(&scores, &profiles, ProgressSinkHole())
 	select {
 	case err := <-errChan:
 		if err != nil {

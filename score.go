@@ -132,8 +132,7 @@ func scoreProfiles(workerID int, jobs chan int, scores *scoresStore, comparer Co
 			return
 		}
 		score := &(scores.scores[j])
-		score.value = comparer.compare(score.stA, score.stB)
-		score.status = COMPLETE
+		scores.SetIdx(j, comparer.compare(score.stA, score.stB), COMPLETE)
 		nScores++
 		if nScores%100000 == 0 {
 			log.Printf("Worker %d has computed %d scores", workerID, nScores)
@@ -165,7 +164,7 @@ type scoresResult struct {
 	Scores []int
 }
 
-func toIndex(profiles ProfileStore, scores scoresStore, errChan chan error) chan Profile {
+func toIndex(profiles *ProfileStore, scores *scoresStore, errChan chan error) chan Profile {
 	queued := make([]bool, len(scores.STs))
 	indexChan := make(chan Profile, 50)
 
@@ -202,7 +201,7 @@ func toIndex(profiles ProfileStore, scores scoresStore, errChan chan error) chan
 	return indexChan
 }
 
-func scoreAll(scores scoresStore, profiles ProfileStore, progress chan ProgressEvent) (done chan bool, err chan error) {
+func scoreAll(scores *scoresStore, profiles *ProfileStore, progress chan ProgressEvent) (done chan bool, err chan error) {
 	numWorkers := 10
 	indexer := NewIndexer(scores.lookup)
 	var indexWg, scoreWg sync.WaitGroup
@@ -247,7 +246,7 @@ func scoreAll(scores scoresStore, profiles ProfileStore, progress chan ProgressE
 
 	for i := 1; i <= numWorkers; i++ {
 		scoreWg.Add(1)
-		go scoreProfiles(i, scoreTasks, &scores, Comparer{indexer.indices}, &scoreWg)
+		go scoreProfiles(i, scoreTasks, scores, Comparer{indexer.indices}, &scoreWg)
 	}
 
 	go func() {
