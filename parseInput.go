@@ -94,12 +94,19 @@ func (c *Cache) Update(cacheDoc *bsonkit.Document, maxThreshold int) (err error)
 		case "threshold":
 			var v int32
 			err = cacheDoc.Value(&v)
-			if c.Threshold > 0 && c.Threshold != int(v) {
-				err = errors.New("Already got a different threshold set for cache")
-			} else if int(v) < maxThreshold {
-				err = errors.New("Threshold is too small, can't use the cache")
-			} else {
-				c.Threshold = int(v)
+			if err != nil {
+				return
+			}
+			if v > 0 {
+				if c.Threshold == int(v) {
+					// nop
+				} else if int(v) < maxThreshold {
+					err = errors.New("Threshold is too small, can't use the cache")
+				} else if c.Threshold > 0 {
+					err = errors.New("Already got a different threshold set for cache")
+				} else {
+					c.Threshold = int(v)
+				}
 			}
 		}
 		if err != nil {
