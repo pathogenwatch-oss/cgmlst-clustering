@@ -81,21 +81,15 @@ func (c *Cache) Update(cacheDoc *bsonkit.Document, maxThreshold int) (err error)
 		return errors.New("Threshold is too small, can't use the cache")
 	}
 
-	var hasPi, hasLambda, hasSTs, hasEdges bool
-
 	for cacheDoc.Next() {
 		switch string(cacheDoc.Key()) {
 		case "pi":
-			hasPi = true
 			err = cacheDoc.Value(piDoc)
 		case "lambda":
-			hasLambda = true
 			err = cacheDoc.Value(lambdaDoc)
 		case "STs":
-			hasSTs = true
 			err = cacheDoc.Value(stsDoc)
 		case "edges":
-			hasEdges = true
 			err = cacheDoc.Value(edgesDoc)
 		case "threshold":
 			var v int32
@@ -120,7 +114,7 @@ func (c *Cache) Update(cacheDoc *bsonkit.Document, maxThreshold int) (err error)
 	err = func() error {
 		c.Lock()
 		defer c.Unlock()
-		if hasPi {
+		if piDoc.Size() > 1 {
 			if len(c.Pi) > 0 {
 				return errors.New("Already got a Pi")
 			}
@@ -128,7 +122,7 @@ func (c *Cache) Update(cacheDoc *bsonkit.Document, maxThreshold int) (err error)
 				return err
 			}
 		}
-		if hasLambda {
+		if lambdaDoc.Size() > 1 {
 			if len(c.Lambda) > 0 {
 				return errors.New("Already got a Lambda")
 			}
@@ -136,7 +130,7 @@ func (c *Cache) Update(cacheDoc *bsonkit.Document, maxThreshold int) (err error)
 				return err
 			}
 		}
-		if hasSTs {
+		if stsDoc.Size() > 1 {
 			if len(c.Sts) > 0 {
 				return errors.New("Already got a STs")
 			}
@@ -150,7 +144,7 @@ func (c *Cache) Update(cacheDoc *bsonkit.Document, maxThreshold int) (err error)
 		return
 	}
 
-	if hasEdges {
+	if edgesDoc.Size() > 1 {
 		err = c.AddEdges(edgesDoc, maxThreshold)
 	}
 

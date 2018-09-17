@@ -378,6 +378,33 @@ func TestParsePartialCache(t *testing.T) {
 	}
 }
 
+func TestParseDuplicates(t *testing.T) {
+	testFile, err := os.Open("testdata/TestDuplicatePi.bson")
+	if err != nil {
+		t.Fatal("Couldn't load test data")
+	}
+	cache := NewCache()
+	docs := bsonkit.GetDocuments(testFile)
+
+	docs.Next()
+	doc := docs.Doc
+	if err := cache.Update(doc, 50); err != nil {
+		t.Fatal(err)
+	}
+
+	docs.Next()
+	doc = docs.Doc
+	if err = cache.Update(doc, 50); err != nil {
+		t.Fatal(err)
+	}
+
+	docs.Next()
+	doc = docs.Doc
+	if err = cache.Update(doc, 50); err == nil {
+		t.Fatal("Expected a duplicate pi error")
+	}
+}
+
 func TestAllParse(t *testing.T) {
 	var nSTs, expected int
 	testFile, err := os.Open("testdata/FakeProfiles.bson")

@@ -360,6 +360,18 @@ async function main() {
       }
     }
   ])
+
+  dumpBson("TestDuplicatePi.bson", [
+    {
+      pi: [1, 2, 3]
+    },
+    {
+      pi: []
+    },
+    {
+      pi: [4, 5]
+    }
+  ])
 }
 
 main().then(() => console.log("Done")).catch(err => console.log(err))
