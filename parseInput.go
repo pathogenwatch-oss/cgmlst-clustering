@@ -677,7 +677,7 @@ func parse(r io.Reader, progress chan ProgressEvent) (STs []CgmlstSt, profiles P
 	}
 
 	log.Printf("Found %d STs\n", len(requestedSts))
-	progress <- ProgressEvent{PROFILES_EXPECTED, len(STs)}
+	progress <- ProgressEvent{PROFILES_EXPECTED, len(requestedSts)}
 
 	cache := NewCache()
 	profiles = NewProfileStore(requestedSts)
