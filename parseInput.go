@@ -756,14 +756,14 @@ func parse(r io.Reader, progress chan ProgressEvent) (STs []CgmlstSt, profiles P
 	} else {
 		var mapExistingToSts map[int]int
 		canReuseCache, STs, mapExistingToSts = sortSts(cache.Sts, requestedSts)
+		scores = NewScores(STs)
 
 		if canReuseCache {
-			scores = NewScores(STs)
-			// We should add the edges from the edge doc
-			if err := scores.UpdateFromCache(cache, mapExistingToSts); err != nil {
-				errChan <- err
-			}
 			existingClusters = Clusters{cache.Pi, cache.Lambda, len(cache.Pi)}
+		}
+		// We should add the edges from the edge doc
+		if err := scores.UpdateFromCache(cache, mapExistingToSts); err != nil {
+			errChan <- err
 		}
 	}
 

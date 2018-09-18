@@ -405,6 +405,26 @@ func TestParseDuplicates(t *testing.T) {
 	}
 }
 
+func TestParseThresholds(t *testing.T) {
+	testFile, err := os.Open("testdata/TestParse.bson")
+	if err != nil {
+		t.Fatal("Couldn't load test data")
+	}
+	cache := NewCache()
+	docs := bsonkit.GetDocuments(testFile)
+
+	docs.Next()
+	docs.Next()
+	doc := docs.Doc
+	if err := cache.Update(doc, 5); err != nil {
+		t.Fatal(err)
+	}
+
+	if cache.Threshold != 5 {
+		t.Fatal("Expected 5")
+	}
+}
+
 func TestAllParse(t *testing.T) {
 	var nSTs, expected int
 	testFile, err := os.Open("testdata/FakeProfiles.bson")

@@ -372,6 +372,60 @@ async function main() {
       pi: [4, 5]
     }
   ])
+
+  // What if someone deleted just one of their genomes
+  dumpBson("TestRequestIsSubset.bson", [
+    {
+      STs: ["a", "b"],
+      maxThreshold: 4
+    },
+    {
+      threshold: 5,
+      STs: ["a", "b", "c"],
+      pi: [1, 2, 2],
+      lambda: [1, 2, 2147483647],
+      edges: {
+        1: [[0, 1]],
+        2: [[1, 2]],
+      }
+    },
+    {
+      threshold: 5,
+      edges: {
+        0: [],
+        4: [],
+        5: [],
+      }
+    },
+    {
+      threshold: 5,
+      edges: {
+        3: [[0, 2]],
+      }
+    },
+    {
+      _id:        new BSON.ObjectID(3),
+      fileId:     "xxx",
+      results: {
+        st: "a",
+        matches: [
+          { gene: "foo", id: 1 },
+          { gene: "bar", id: "xyz" }
+        ]
+      }
+    },
+    {
+      _id:        new BSON.ObjectID(4),
+      fileId:     "yyy",
+      results: {
+        st: "b",
+        matches: [
+          { gene: "foo", id: 1 },
+          { gene: "bar", id: 2 }
+        ]
+      }
+    }
+  ])
 }
 
 main().then(() => console.log("Done")).catch(err => console.log(err))
