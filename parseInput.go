@@ -258,7 +258,7 @@ func (c Cache) Check(maxThreshold int) error {
 		return errors.New("Lambda not set")
 	}
 
-	for t := 0; t <= c.Threshold; t++ {
+	for t := 0; t <= maxThreshold; t++ {
 		if _, found := c.Edges[t]; !found {
 			return fmt.Errorf("Edges are missing at threshold of %d", t)
 		}
