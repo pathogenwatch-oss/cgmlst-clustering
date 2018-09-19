@@ -205,7 +205,7 @@ func TestUpdateScores(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := scores.UpdateFromCache(cache, mapExistingToSts); err != nil {
+	if err := scores.UpdateFromCache(cache, mapExistingToSts, cache.Threshold); err != nil {
 		t.Fatal(err)
 	}
 

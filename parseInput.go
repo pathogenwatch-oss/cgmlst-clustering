@@ -64,10 +64,11 @@ type Cache struct {
 	Sts       []string
 	Threshold int
 	Edges     map[int][][2]int
+	nEdges    int
 }
 
 func NewCache() Cache {
-	return Cache{Edges: make(map[int][][2]int)}
+	return Cache{Edges: make(map[int][][2]int), nEdges: 0}
 }
 
 func (c *Cache) Update(cacheDoc *bsonkit.Document, maxThreshold int) (err error) {
@@ -76,10 +77,6 @@ func (c *Cache) Update(cacheDoc *bsonkit.Document, maxThreshold int) (err error)
 	lambdaDoc := new(bsonkit.Document)
 	stsDoc := new(bsonkit.Document)
 	edgesDoc := new(bsonkit.Document)
-
-	if c.Threshold > 0 && c.Threshold < maxThreshold {
-		return errors.New("Threshold is too small, can't use the cache")
-	}
 
 	for cacheDoc.Next() {
 		switch string(cacheDoc.Key()) {
@@ -100,8 +97,6 @@ func (c *Cache) Update(cacheDoc *bsonkit.Document, maxThreshold int) (err error)
 			if v > 0 {
 				if c.Threshold == int(v) {
 					// nop
-				} else if int(v) < maxThreshold {
-					err = errors.New("Threshold is too small, can't use the cache")
 				} else if c.Threshold > 0 {
 					err = errors.New("Already got a different threshold set for cache")
 				} else {
@@ -228,6 +223,7 @@ func (c *Cache) AddEdges(doc *bsonkit.Document, maxThreshold int) (err error) {
 		}
 		c.Lock()
 		c.Edges[distance] = atDistance
+		c.nEdges++
 		c.Unlock()
 	}
 	if err != nil {
@@ -239,14 +235,18 @@ func (c *Cache) AddEdges(doc *bsonkit.Document, maxThreshold int) (err error) {
 	return
 }
 
-func (c Cache) Check(maxThreshold int) error {
+func (c *Cache) Complete(maxThreshold int) error {
 	c.RLock()
 	defer c.RUnlock()
+	threshold := c.Threshold
+	if maxThreshold < c.Threshold {
+		threshold = maxThreshold
+	}
+	if c.nEdges != threshold+1 {
+		return errors.New("Not enough edges")
+	}
 	if c.Threshold == 0 {
 		return errors.New("Threshold not set")
-	}
-	if c.Threshold < maxThreshold {
-		return errors.New("Threshold is not big enough")
 	}
 	if len(c.Sts) == 0 {
 		return errors.New("Sts not set")
@@ -258,7 +258,7 @@ func (c Cache) Check(maxThreshold int) error {
 		return errors.New("Lambda not set")
 	}
 
-	for t := 0; t <= maxThreshold; t++ {
+	for t := 0; t <= threshold; t++ {
 		if _, found := c.Edges[t]; !found {
 			return fmt.Errorf("Edges are missing at threshold of %d", t)
 		}
@@ -411,7 +411,7 @@ func (s scoresStore) Todo() int32 {
 	return atomic.LoadInt32(&s.todo)
 }
 
-func (s *scoresStore) UpdateFromCache(c Cache, mapExistingToSts map[int]int) (err error) {
+func (s *scoresStore) UpdateFromCache(c Cache, mapExistingToSts map[int]int, maxThreshold int) (err error) {
 	var (
 		distance                 int
 		aInExisting, bInExisting int
@@ -436,6 +436,12 @@ func (s *scoresStore) UpdateFromCache(c Cache, mapExistingToSts map[int]int) (er
 				return err
 			}
 		}
+	}
+
+	if c.Threshold < maxThreshold {
+		// The cache is missing some edges because it was generated with a smaller
+		// threshold.
+		return
 	}
 
 	var maxExisting int
@@ -708,7 +714,6 @@ func parse(r io.Reader, progress chan ProgressEvent) (STs []CgmlstSt, profiles P
 					if err != nil {
 						log.Println(err)
 					}
-					break
 				case "results":
 					if duplicate, err := profiles.AddFromDoc(doc); err == nil && !duplicate {
 						nProfiles++
@@ -747,7 +752,7 @@ func parse(r io.Reader, progress chan ProgressEvent) (STs []CgmlstSt, profiles P
 		log.Println("Workers have all finished")
 	}
 
-	cacheError := cache.Check(maxThreshold)
+	cacheError := cache.Complete(maxThreshold)
 	existingClusters = Clusters{[]int{}, []int{}, 0}
 	STs = requestedSts
 	if cacheError != nil {
@@ -762,7 +767,7 @@ func parse(r io.Reader, progress chan ProgressEvent) (STs []CgmlstSt, profiles P
 			existingClusters = Clusters{cache.Pi, cache.Lambda, len(cache.Pi)}
 		}
 		// We should add the edges from the edge doc
-		if err := scores.UpdateFromCache(cache, mapExistingToSts); err != nil {
+		if err := scores.UpdateFromCache(cache, mapExistingToSts, maxThreshold); err != nil {
 			errChan <- err
 		}
 	}
