@@ -20,15 +20,20 @@ func main() {
 	enc := json.NewEncoder(os.Stdout)
 	progressIn, progressOut := NewProgressWorker()
 	defer func() { progressIn <- ProgressEvent{EXIT, 0} }()
-	results := make(chan ClusterOutput)
+	results := make(chan ClusterOutput, 100)
 
+	done := make(chan bool)
 	go func() {
 		for {
 			select {
 			case p := <-progressOut:
 				enc.Encode(p)
-			case r := <-results:
-				enc.Encode(r)
+			case r, more := <-results:
+				if more {
+					enc.Encode(r)
+				} else {
+					done <- true
+				}
 			}
 		}
 	}()
@@ -82,4 +87,7 @@ func main() {
 		results <- c
 		progressIn <- ProgressEvent{SAVED_RESULT, 1}
 	}
+
+	close(results)
+	<-done
 }
