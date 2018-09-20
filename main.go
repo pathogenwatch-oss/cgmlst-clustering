@@ -18,10 +18,22 @@ func isSmaller(a, b bsonkit.ObjectID) bool {
 func main() {
 	r := (io.Reader)(os.Stdin)
 	enc := json.NewEncoder(os.Stdout)
-	progress := ProgressWorker(enc)
-	defer func() { progress <- ProgressEvent{EXIT, 0} }()
+	progressIn, progressOut := NewProgressWorker()
+	defer func() { progressIn <- ProgressEvent{EXIT, 0} }()
+	results := make(chan ClusterOutput)
 
-	STs, profiles, scores, maxThreshold, existingClusters, canReuseCache, err := parse(r, progress)
+	go func() {
+		for {
+			select {
+			case p := <-progressOut:
+				enc.Encode(p)
+			case r := <-results:
+				enc.Encode(r)
+			}
+		}
+	}()
+
+	profiles, scores, maxThreshold, existingClusters, canReuseCache, err := parse(r, progressIn)
 	if err != nil {
 		panic(err)
 	}
@@ -33,7 +45,8 @@ func main() {
 			log.Printf("%d scores remaining\n", scores.Todo())
 		}
 	}()
-	scoreComplete, errChan := scoreAll(&scores, &profiles, progress)
+
+	scoreComplete, errChan := scoreAll(&scores, &profiles, progressIn)
 
 	select {
 	case err := <-errChan:
@@ -44,14 +57,13 @@ func main() {
 	}
 	log.Printf("%d scores remaining\n", scores.Todo())
 
-	progress <- ProgressEvent{DISTANCES_STARTED, 0}
+	progressIn <- ProgressEvent{DISTANCES_STARTED, 0}
 	distances, err := scores.Distances()
 	if err != nil {
 		panic(err)
 	}
-	progress <- ProgressEvent{DISTANCES_COMPLETE, 0}
 
-	progress <- ProgressEvent{CLUSTERING_STARTED, 0}
+	progressIn <- ProgressEvent{CLUSTERING_STARTED, 0}
 	var clusters Clusters
 	if canReuseCache {
 		clusters, err = UpdateClusters(existingClusters, len(scores.STs), distances)
@@ -65,10 +77,9 @@ func main() {
 		}
 	}
 
+	progressIn <- ProgressEvent{RESULTS_TO_SAVE, maxThreshold + 1}
 	for c := range clusters.Format(maxThreshold, distances, scores.STs) {
-		enc.Encode(c)
+		results <- c
+		progressIn <- ProgressEvent{SAVED_RESULT, 1}
 	}
-
-	log.Printf("%d scores remaining\n", scores.Todo())
-	log.Printf("STs: %d; Scores: %d\n", len(STs), len(scores.scores))
 }

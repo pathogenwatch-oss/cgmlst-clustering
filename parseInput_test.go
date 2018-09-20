@@ -277,19 +277,19 @@ func TestParse(t *testing.T) {
 	if err != nil {
 		t.Fatal("Couldn't load test data")
 	}
-	STs, profiles, scores, maxThreshold, existingClusters, canReuseCache, err := parse(testFile, ProgressSinkHole())
+	profiles, scores, maxThreshold, existingClusters, canReuseCache, err := parse(testFile, ProgressSinkHole())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if canReuseCache != true {
 		t.Fatal("Expected true")
 	}
-	if len(STs) != 5 {
-		t.Fatalf("Expected 5 STs, got %v", STs)
+	if len(scores.STs) != 5 {
+		t.Fatalf("Expected 5 STs, got %v", scores.STs)
 	}
 	expected := []CgmlstSt{"a", "b", "c", "d", "e"}
-	if !reflect.DeepEqual(expected, STs) {
-		t.Fatalf("Got %v\n", STs)
+	if !reflect.DeepEqual(expected, scores.STs) {
+		t.Fatalf("Got %v\n", scores.STs)
 	}
 	nProfiles := 0
 	for _, seen := range profiles.seen {
@@ -325,19 +325,19 @@ func TestParseNoCache(t *testing.T) {
 	if err != nil {
 		t.Fatal("Couldn't load test data")
 	}
-	STs, profiles, scores, maxThreshold, existingClusters, canReuseCache, err := parse(testFile, ProgressSinkHole())
+	profiles, scores, maxThreshold, existingClusters, canReuseCache, err := parse(testFile, ProgressSinkHole())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if canReuseCache == true {
 		t.Fatal("Expected false")
 	}
-	if len(STs) != 5 {
-		t.Fatalf("Expected 5 STs, got %v", STs)
+	if len(scores.STs) != 5 {
+		t.Fatalf("Expected 5 STs, got %v", scores.STs)
 	}
 	expected := []CgmlstSt{"a", "e", "b", "c", "d"}
-	if !reflect.DeepEqual(expected, STs) {
-		t.Fatalf("Got %v\n", STs)
+	if !reflect.DeepEqual(expected, scores.STs) {
+		t.Fatalf("Got %v\n", scores.STs)
 	}
 	nProfiles := 0
 	for _, seen := range profiles.seen {
@@ -369,7 +369,7 @@ func TestParsePartialCache(t *testing.T) {
 	if err != nil {
 		t.Fatal("Couldn't load test data")
 	}
-	_, _, _, _, _, canReuseCache, err := parse(testFile, ProgressSinkHole())
+	_, _, _, _, canReuseCache, err := parse(testFile, ProgressSinkHole())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -431,7 +431,7 @@ func TestAllParse(t *testing.T) {
 	if err != nil {
 		t.Fatal("Couldn't load test data")
 	}
-	STs, profiles, scores, maxThreshold, _, canReuseCache, err := parse(testFile, ProgressSinkHole())
+	profiles, scores, maxThreshold, _, canReuseCache, err := parse(testFile, ProgressSinkHole())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -445,7 +445,7 @@ func TestAllParse(t *testing.T) {
 	if actual, expected := len(p.Matches), 1994; actual != expected {
 		t.Fatalf("Expected %d matches, got %d\n", expected, actual)
 	}
-	if nSTs, expected = len(STs), 7000; nSTs != expected {
+	if nSTs, expected = len(scores.STs), 7000; nSTs != expected {
 		t.Fatalf("Expected %d STs, got %d\n", expected, nSTs)
 	}
 	if actual, expected := len(profiles.profiles), nSTs; actual != expected {

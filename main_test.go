@@ -12,11 +12,11 @@ func TestSubset(t *testing.T) {
 		t.Fatal("Couldn't load test data")
 	}
 	progress := ProgressSinkHole()
-	STs, profiles, scores, maxThreshold, _, canReuseCache, err := parse(testFile, progress)
+	profiles, scores, maxThreshold, _, canReuseCache, err := parse(testFile, progress)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(STs, []CgmlstSt{"a", "b"}) {
+	if !reflect.DeepEqual(scores.STs, []CgmlstSt{"a", "b"}) {
 		t.Fatal("STs")
 	}
 	if maxThreshold != 4 {
@@ -78,11 +78,11 @@ func TestHigherThreshold(t *testing.T) {
 		t.Fatal("Couldn't load test data")
 	}
 	progress := ProgressSinkHole()
-	STs, profiles, scores, maxThreshold, _, canReuseCache, err := parse(testFile, progress)
+	profiles, scores, maxThreshold, _, canReuseCache, err := parse(testFile, progress)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(STs, []CgmlstSt{"a", "b", "d"}) {
+	if !reflect.DeepEqual(scores.STs, []CgmlstSt{"a", "b", "d"}) {
 		t.Fatal("STs")
 	}
 	if maxThreshold != 5 {

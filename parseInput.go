@@ -266,6 +266,22 @@ func (c *Cache) Complete(maxThreshold int) error {
 	return nil
 }
 
+func (c Cache) CountDistances(maxThreshold int) int {
+	c.RLock()
+	defer c.RUnlock()
+	distances := 0
+	threshold := c.Threshold
+	if maxThreshold < c.Threshold {
+		threshold = maxThreshold
+	}
+	for t := 0; t <= threshold; t++ {
+		if atThreshold, found := c.Edges[t]; found {
+			distances += len(atThreshold)
+		}
+	}
+	return distances
+}
+
 type Profile struct {
 	ST      CgmlstSt
 	Matches M
@@ -632,9 +648,21 @@ func sortSts(existing []CgmlstSt, requested []CgmlstSt) (isSubset bool, output [
 	return
 }
 
-func parse(r io.Reader, progress chan ProgressEvent) (STs []CgmlstSt, profiles ProfileStore, scores scoresStore, maxThreshold int, existingClusters Clusters, canReuseCache bool, err error) {
-	progress <- ProgressEvent{PARSING_STARTED, 0}
-	defer func() { progress <- ProgressEvent{PARSING_COMPLETE, 0} }()
+func estimateCacheReusability(cacheSTs []CgmlstSt, requestedSts []CgmlstSt) int {
+	count := 0
+	inReq := map[CgmlstSt]bool{}
+	for _, st := range requestedSts {
+		inReq[st] = true
+	}
+	for _, st := range cacheSTs {
+		if inReq[st] {
+			count++
+		}
+	}
+	return count
+}
+
+func parse(r io.Reader, progress chan ProgressEvent) (profiles ProfileStore, scores scoresStore, maxThreshold int, existingClusters Clusters, canReuseCache bool, err error) {
 	err = nil
 	errChan := make(chan error)
 	numWorkers := 5
@@ -714,6 +742,14 @@ func parse(r io.Reader, progress chan ProgressEvent) (STs []CgmlstSt, profiles P
 					if err != nil {
 						log.Println(err)
 					}
+					if cache.Complete(maxThreshold) == nil {
+						overlap := estimateCacheReusability(cache.Sts, requestedSts)
+						if cache.Threshold >= maxThreshold {
+							progress <- ProgressEvent{CACHED_SCORES_EXPECTED, overlap * (overlap - 1) / 2}
+						} else {
+							progress <- ProgressEvent{CACHED_SCORES_EXPECTED, cache.CountDistances(maxThreshold)}
+						}
+					}
 				case "results":
 					if duplicate, err := profiles.AddFromDoc(doc); err == nil && !duplicate {
 						nProfiles++
@@ -754,7 +790,7 @@ func parse(r io.Reader, progress chan ProgressEvent) (STs []CgmlstSt, profiles P
 
 	cacheError := cache.Complete(maxThreshold)
 	existingClusters = Clusters{[]int{}, []int{}, 0}
-	STs = requestedSts
+	STs := requestedSts
 	if cacheError != nil {
 		log.Println(cacheError)
 		scores = NewScores(STs)

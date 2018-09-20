@@ -1,24 +1,34 @@
 package main
 
 import (
-	"encoding/json"
 	"time"
 )
 
+// Messages
 const (
-	PARSING_STARTED      = iota
-	PROFILES_EXPECTED    = iota
-	PROFILE_PARSED       = iota
-	PARSING_COMPLETE     = iota
-	PROFILE_INDEXED      = iota
-	SCORE_UPDATED        = iota
-	SCORING_COMPLETE     = iota
-	CACHED_RESULT        = iota
-	DISTANCES_STARTED    = iota
-	DISTANCES_COMPLETE   = iota
-	CLUSTERING_STARTED   = iota
-	CLUSTERING_COMPLETED = iota
-	EXIT                 = iota
+	PROFILES_EXPECTED      = iota
+	CACHE_DOC_PARSED       = iota
+	CACHED_SCORES_EXPECTED = iota
+	PROFILE_PARSED         = iota
+	PROFILE_INDEXED        = iota
+	SCORE_CALCULATED       = iota
+	DISTANCES_STARTED      = iota
+	CLUSTERING_STARTED     = iota
+	RESULTS_TO_SAVE        = iota
+	SAVED_RESULT           = iota
+	EXIT                   = iota
+)
+
+// States
+const (
+	STARTING          = iota
+	PARSING_CACHE     = iota
+	PARSING_PROFILES  = iota
+	INDEXING_PROFILES = iota
+	SCORING           = iota
+	CLUSTERING        = iota
+	SAVING_RESULTS    = iota
+	DONE              = iota
 )
 
 type ProgressEvent struct {
@@ -31,87 +41,114 @@ type ProgressMessage struct {
 	Message  string  `json:"message"`
 }
 
-func ProgressWorker(output *json.Encoder) (input chan ProgressEvent) {
-	input = make(chan ProgressEvent, 1000)
-	var (
-		progress         float32
-		parsingStep      float32
-		indexingStep     float32
-		scoringStep      float32
-		cachingStep      float32
-		nextUpdate       float32
-		parsingMessages  int
-		scoringMessages  int
-		indexingMessages int
-		cachingMessages  int
-		other            int
-		nScores          int
-		nSts             int
-		message          string
-	)
+type ProgressWorker struct {
+	lastProgress float32
+	totalWork    int
+	workDone     int
+	state        int
+	cachingCost  int
+}
+
+// Somewhat realistic relative costs
+const (
+	PARSE_COST   = 46000
+	INDEX_COST   = 16000
+	SCORE_COST   = 22
+	CACHING_COST = SCORE_COST / 5
+)
+
+func (w *ProgressWorker) Update(msg ProgressEvent) {
+	switch msg.EventType {
+	case PROFILES_EXPECTED:
+		nSts := msg.EventValue
+		nScores := (nSts * (nSts - 1)) / 2
+		w.totalWork = (PARSE_COST + INDEX_COST) * nSts
+		w.totalWork += (SCORE_COST + w.cachingCost) * nScores
+	case CACHE_DOC_PARSED:
+		if w.state < PARSING_CACHE {
+			w.state = PARSING_CACHE
+		}
+	case PROFILE_PARSED:
+		if w.state < PARSING_PROFILES {
+			w.state = PARSING_PROFILES
+		} else if w.state > SAVING_RESULTS {
+			return
+		}
+		w.workDone += PARSE_COST
+	case CACHED_SCORES_EXPECTED:
+		newTotal := w.totalWork - (msg.EventValue * SCORE_COST)
+		w.workDone = w.workDone * newTotal / w.totalWork
+		w.totalWork = newTotal
+	case PROFILE_INDEXED:
+		if w.state < INDEXING_PROFILES {
+			w.state = INDEXING_PROFILES
+		} else if w.state > SAVING_RESULTS {
+			return
+		}
+		w.workDone += INDEX_COST
+	case SCORE_CALCULATED:
+		if w.state < SCORING {
+			w.state = SCORING
+		} else if w.state > SAVING_RESULTS {
+			return
+		}
+		w.workDone += SCORE_COST
+	case RESULTS_TO_SAVE:
+		if w.state < SAVING_RESULTS {
+			w.state = SAVING_RESULTS
+		}
+		w.cachingCost = (w.totalWork - w.workDone) / msg.EventValue
+	case SAVED_RESULT:
+		if w.state < SAVING_RESULTS {
+			w.state = SAVING_RESULTS
+		}
+		w.workDone += w.cachingCost
+	case EXIT:
+		if w.state < DONE {
+			w.state = DONE
+		}
+	default:
+	}
+}
+
+func (w *ProgressWorker) Progress() ProgressMessage {
+	if w.totalWork == 0 {
+		return ProgressMessage{0, "Initialising"}
+	}
+	progress := 100.0 * (float32(w.workDone) / float32(w.totalWork))
+	if progress > 99.999 {
+		progress = 99.999
+	}
+	var message string
+	switch w.state {
+	case STARTING:
+		message = "Initialising"
+	case PARSING_CACHE:
+		message = "Loading data from the cache"
+	case PARSING_PROFILES:
+		message = "Parsing CGMLST profiles"
+	case INDEXING_PROFILES:
+		message = "Indexing CGMLST profiles"
+	case SCORING:
+		message = "Calculating pairwise distances"
+	case CLUSTERING:
+		message = "Single-linkage clustering"
+	case SAVING_RESULTS:
+		message = "Saving results"
+	case DONE:
+		message = "Clustering complete"
+	}
+	return ProgressMessage{progress, message}
+}
+
+func NewProgressWorker() (chan ProgressEvent, chan ProgressMessage) {
+	worker := ProgressWorker{cachingCost: CACHING_COST}
+	input := make(chan ProgressEvent, 1000)
+	output := make(chan ProgressMessage, 1000)
 
 	go func() {
-		message = "Loading data"
-
 		for msg := range input {
-			// PARSING_STARTED      = 1%
-			// PROFILES_EXPECTED    = 1%
-			// PROFILE_PARSED       = 8%
-			// PARSING_COMPLETE     = 1%
-			// PROFILE_INDEXED      = 14%
-			// SCORE_UPDATED        = 52%
-			// SCORING_COMPLETE     = 1%
-			// CACHED_RESULT        = 17%
-			// DISTANCES_STARTED    = 1%
-			// DISTANCES_COMPLETE   = 1%
-			// CLUSTERING_STARTED   = 1%
-			// CLUSTERING_COMPLETED = 1%
-			// EXIT                 = 1%
-			switch msg.EventType {
-			case PARSING_STARTED:
-				message = "Loading data"
-				other++
-			case PROFILES_EXPECTED:
-				other++
-				nSts = msg.EventValue
-				parsingStep = 8.0 / float32(nSts)
-				indexingStep = 14.0 / float32(nSts)
-				nScores = (nSts * (nSts - 1)) / 2
-				scoringStep = 52.0 / float32(nScores)
-				cachingStep = 17.0 / float32(nSts)
-			case PROFILE_PARSED:
-				message = "Loading data"
-				parsingMessages++
-			case PARSING_COMPLETE:
-				other++
-			case PROFILE_INDEXED:
-				message = "Indexing data"
-				indexingMessages++
-			case SCORE_UPDATED:
-				message = "Calculating distances"
-				scoringMessages++
-			case SCORING_COMPLETE:
-				other++
-			case CACHED_RESULT:
-				message = "Saving results"
-				cachingMessages++
-			case DISTANCES_STARTED:
-				message = "Clustering"
-				other++
-			case DISTANCES_COMPLETE:
-				message = "Clustering"
-				other++
-			case CLUSTERING_STARTED:
-				message = "Clustering"
-				other++
-			case CLUSTERING_COMPLETED:
-				message = "Clustering"
-				other++
-			case EXIT:
-				message = "Clustering"
-				other++
-			default:
-			}
+			worker.Update(msg)
 		}
 	}()
 
@@ -120,40 +157,12 @@ func ProgressWorker(output *json.Encoder) (input chan ProgressEvent) {
 	go func() {
 		for {
 			<-tick
-			// This looks stupid (and it is) but I had to do this because of floating point arithmetic
-			// If you have 7000 sequences, there are a lot of scores.  The step for each score gets
-			// really small.  Once the progress gets to about 64, adding a really small number to it
-			// results in the same number and the progress value stops going up :(
-			// i.e. in float32 maths: 64 + 1e-6 === 64
-			progress = float32(other)
-			if parsingMessages > nSts {
-				progress += parsingStep * float32(nSts)
-			} else {
-				progress += parsingStep * float32(parsingMessages)
-			}
-			if indexingMessages > nSts {
-				progress += indexingStep * float32(nSts)
-			} else {
-				progress += indexingStep * float32(indexingMessages)
-			}
-			if scoringMessages > nScores {
-				progress += scoringStep * float32(nScores)
-			} else {
-				progress += scoringStep * float32(scoringMessages)
-			}
-			if cachingMessages > nSts {
-				progress += cachingStep * float32(nSts)
-			} else {
-				progress += cachingStep * float32(cachingMessages)
-			}
-			if progress > 99.999 {
-				progress = 99.999
-			}
-			if progress > nextUpdate {
-				output.Encode(ProgressMessage{progress, message})
-				nextUpdate = progress + 0.1
+			p := worker.Progress()
+			if p.Progress > worker.lastProgress+0.1 {
+				output <- p
+				worker.lastProgress = p.Progress
 			}
 		}
 	}()
-	return
+	return input, output
 }

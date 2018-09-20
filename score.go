@@ -224,7 +224,7 @@ func scoreAll(scores *scoresStore, profiles *ProfileStore, progress chan Progres
 	go func() {
 		for task := range _scoreTasks {
 			scoreTasks <- task
-			progress <- ProgressEvent{SCORE_UPDATED, 1}
+			progress <- ProgressEvent{SCORE_CALCULATED, 1}
 		}
 		close(scoreTasks)
 	}()
@@ -251,7 +251,6 @@ func scoreAll(scores *scoresStore, profiles *ProfileStore, progress chan Progres
 
 	go func() {
 		scoreWg.Wait()
-		progress <- ProgressEvent{SCORING_COMPLETE, 0}
 		done <- true
 	}()
 
