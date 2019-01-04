@@ -287,62 +287,6 @@ type Profile struct {
 	Matches M
 }
 
-type ProfileStore struct {
-	lookup   map[CgmlstSt]int
-	profiles []Profile
-	seen     []bool
-}
-
-func NewProfileStore(STs []CgmlstSt) (profiles ProfileStore) {
-	profiles.lookup = make(map[CgmlstSt]int)
-	for i, st := range STs {
-		profiles.lookup[st] = i
-	}
-	profiles.profiles = make([]Profile, len(STs))
-	profiles.seen = make([]bool, len(STs))
-	return
-}
-
-func (profiles *ProfileStore) Add(p Profile) (duplicate bool, err error) {
-	idx, known := profiles.lookup[p.ST]
-	if !known {
-		return false, fmt.Errorf("unknown fileId %s", p.ST)
-	}
-
-	if profiles.seen[idx] {
-		// This is a duplicate of something we've already parsed
-		return true, nil
-	}
-
-	profiles.profiles[idx] = p
-	profiles.seen[idx] = true
-	return false, nil
-}
-
-func (profiles *ProfileStore) Get(ST CgmlstSt) (Profile, error) {
-	idx, known := profiles.lookup[ST]
-	if !known {
-		return Profile{}, fmt.Errorf("unknown ST %s", ST)
-	}
-	if seen := profiles.seen[idx]; !seen {
-		return Profile{}, fmt.Errorf("unknown ST %s", ST)
-	}
-	return profiles.profiles[idx], nil
-}
-
-func (profiles *ProfileStore) AddFromDoc(doc *bsonkit.Document) (bool, error) {
-	p, err := parseProfile(doc)
-	if err != nil {
-		return false, err
-	}
-
-	if p.ST == "" {
-		return false, errors.New("Profile doc had an invalid fileId")
-	}
-
-	return profiles.Add(p)
-}
-
 type scoreDetails struct {
 	stA, stB      int
 	value, status int
@@ -662,7 +606,20 @@ func estimateCacheReusability(cacheSTs []CgmlstSt, requestedSts []CgmlstSt) int 
 	return count
 }
 
-func parse(r io.Reader, progress chan ProgressEvent) (profiles ProfileStore, scores scoresStore, maxThreshold int, existingClusters Clusters, canReuseCache bool, err error) {
+func parseAndIndex(doc *bsonkit.Document, index *Indexer) (bool, error) {
+	p, err := parseProfile(doc)
+	if err != nil {
+		return false, err
+	}
+
+	if p.ST == "" {
+		return false, errors.New("Profile doc had an invalid fileId")
+	}
+
+	return index.Index(p)
+}
+
+func parse(r io.Reader, progress chan ProgressEvent) (index *Indexer, scores scoresStore, maxThreshold int, existingClusters Clusters, canReuseCache bool, err error) {
 	err = nil
 	errChan := make(chan error)
 	numWorkers := 5
@@ -714,7 +671,7 @@ func parse(r io.Reader, progress chan ProgressEvent) (profiles ProfileStore, sco
 	progress <- ProgressEvent{PROFILES_EXPECTED, len(requestedSts)}
 
 	cache := NewCache()
-	profiles = NewProfileStore(requestedSts)
+	index = NewIndexer(requestedSts)
 
 	worker := func(workerID int) {
 		nDocs := 0
@@ -751,7 +708,7 @@ func parse(r io.Reader, progress chan ProgressEvent) (profiles ProfileStore, sco
 						}
 					}
 				case "results":
-					if duplicate, err := profiles.AddFromDoc(doc); err == nil && !duplicate {
+					if duplicate, err := parseAndIndex(doc, index); err == nil && !duplicate {
 						nProfiles++
 						progress <- ProgressEvent{PROFILE_PARSED, 1}
 					} else if err != nil {

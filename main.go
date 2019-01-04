@@ -38,7 +38,7 @@ func main() {
 		}
 	}()
 
-	profiles, scores, maxThreshold, existingClusters, canReuseCache, err := parse(r, progressIn)
+	index, scores, maxThreshold, existingClusters, canReuseCache, err := parse(r, progressIn)
 	if err != nil {
 		panic(err)
 	}
@@ -51,7 +51,7 @@ func main() {
 		}
 	}()
 
-	scoreComplete, errChan := scoreAll(&scores, &profiles, progressIn)
+	scoreComplete, errChan := scoreAll(&scores, index, progressIn)
 
 	select {
 	case err := <-errChan:

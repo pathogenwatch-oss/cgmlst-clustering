@@ -12,7 +12,7 @@ func TestSubset(t *testing.T) {
 		t.Fatal("Couldn't load test data")
 	}
 	progress := ProgressSinkHole()
-	profiles, scores, maxThreshold, _, canReuseCache, err := parse(testFile, progress)
+	index, scores, maxThreshold, _, canReuseCache, err := parse(testFile, progress)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +35,7 @@ func TestSubset(t *testing.T) {
 		t.Fatal(distances)
 	}
 
-	scoreComplete, errChan := scoreAll(&scores, &profiles, progress)
+	scoreComplete, errChan := scoreAll(&scores, index, progress)
 
 	select {
 	case err := <-errChan:
@@ -78,7 +78,7 @@ func TestHigherThreshold(t *testing.T) {
 		t.Fatal("Couldn't load test data")
 	}
 	progress := ProgressSinkHole()
-	profiles, scores, maxThreshold, _, canReuseCache, err := parse(testFile, progress)
+	index, scores, maxThreshold, _, canReuseCache, err := parse(testFile, progress)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +97,7 @@ func TestHigherThreshold(t *testing.T) {
 		t.Fatal("Not got all the distances yet")
 	}
 
-	scoreComplete, errChan := scoreAll(&scores, &profiles, progress)
+	scoreComplete, errChan := scoreAll(&scores, index, progress)
 
 	select {
 	case err := <-errChan:

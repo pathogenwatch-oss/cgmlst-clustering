@@ -230,7 +230,7 @@ func TestParseProfile(t *testing.T) {
 		t.Fatal("Couldn't load test data")
 	}
 
-	profilesStore := NewProfileStore([]string{"def", "abc"})
+	index := NewIndexer([]string{"def", "abc"})
 
 	docs := bsonkit.GetDocuments(testFile)
 	docs.Next()
@@ -238,28 +238,13 @@ func TestParseProfile(t *testing.T) {
 		t.Fatal(docs.Err)
 	}
 
-	if _, err := profilesStore.AddFromDoc(docs.Doc); err != nil {
+	if _, err := parseAndIndex(docs.Doc, index); err != nil {
 		t.Fatal(err)
 	}
 
-	var (
-		p Profile
-	)
-	if p, err = profilesStore.Get("abc"); err != nil {
-		t.Fatal("profile is missing")
-	}
-
-	if actual, expected := p.ST, "abc"; actual != expected {
-		t.Fatalf("Expected %s, got %s\n", expected, actual)
-	}
-	if actual, expected := len(p.Matches), 2; actual != expected {
-		t.Fatalf("Expected %d, got %d\n", expected, actual)
-	}
-	if actual, expected := p.Matches["foo"], 1; int(actual.(int32)) != expected {
-		t.Fatalf("Expected %d, got %d\n", expected, actual)
-	}
-	if actual, expected := p.Matches["bar"], "xyz"; actual.(string) != expected {
-		t.Fatalf("Expected %s, got %s\n", expected, actual)
+	i := index.indices[index.lookup["abc"]]
+	if !i.Ready {
+		t.Fatal("Profile not in index")
 	}
 }
 
@@ -277,7 +262,7 @@ func TestParse(t *testing.T) {
 	if err != nil {
 		t.Fatal("Couldn't load test data")
 	}
-	profiles, scores, maxThreshold, existingClusters, canReuseCache, err := parse(testFile, ProgressSinkHole())
+	index, scores, maxThreshold, existingClusters, canReuseCache, err := parse(testFile, ProgressSinkHole())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -292,13 +277,13 @@ func TestParse(t *testing.T) {
 		t.Fatalf("Got %v\n", scores.STs)
 	}
 	nProfiles := 0
-	for _, seen := range profiles.seen {
-		if seen {
+	for _, i := range index.indices {
+		if i.Ready {
 			nProfiles++
 		}
 	}
 	if nProfiles != 2 {
-		t.Fatalf("Expected 2 profiles, got %v\n", profiles.profiles)
+		t.Fatalf("Expected 2 profiles, got %v\n", nProfiles)
 	}
 	if len(scores.scores) != 10 {
 		t.Fatal("Expected 10 scores")
@@ -325,7 +310,7 @@ func TestParseNoCache(t *testing.T) {
 	if err != nil {
 		t.Fatal("Couldn't load test data")
 	}
-	profiles, scores, maxThreshold, existingClusters, canReuseCache, err := parse(testFile, ProgressSinkHole())
+	index, scores, maxThreshold, existingClusters, canReuseCache, err := parse(testFile, ProgressSinkHole())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -340,13 +325,13 @@ func TestParseNoCache(t *testing.T) {
 		t.Fatalf("Got %v\n", scores.STs)
 	}
 	nProfiles := 0
-	for _, seen := range profiles.seen {
-		if seen {
+	for _, i := range index.indices {
+		if i.Ready {
 			nProfiles++
 		}
 	}
 	if nProfiles != 2 {
-		t.Fatalf("Expected 2 profiles, got %v\n", profiles.seen)
+		t.Fatalf("Expected 2 profiles, got %v\n", nProfiles)
 	}
 	if len(scores.scores) != 10 {
 		t.Fatal("Expected 10 scores")
@@ -431,24 +416,24 @@ func TestAllParse(t *testing.T) {
 	if err != nil {
 		t.Fatal("Couldn't load test data")
 	}
-	profiles, scores, maxThreshold, _, canReuseCache, err := parse(testFile, ProgressSinkHole())
+	index, scores, maxThreshold, _, canReuseCache, err := parse(testFile, ProgressSinkHole())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !canReuseCache {
 		t.Fatal("Expected true")
 	}
-	p, err := profiles.Get("000000000000000000005000")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if actual, expected := len(p.Matches), 1994; actual != expected {
-		t.Fatalf("Expected %d matches, got %d\n", expected, actual)
-	}
 	if nSTs, expected = len(scores.STs), 7000; nSTs != expected {
 		t.Fatalf("Expected %d STs, got %d\n", expected, nSTs)
 	}
-	if actual, expected := len(profiles.profiles), nSTs; actual != expected {
+
+	nProfiles := 0
+	for _, i := range index.indices {
+		if i.Ready {
+			nProfiles++
+		}
+	}
+	if actual, expected := nProfiles, nSTs; actual != expected {
 		t.Fatalf("Expected %d profiles, got %d\n", expected, actual)
 	}
 	if actual, expected := len(scores.scores), nSTs*(nSTs-1)/2; actual != expected {

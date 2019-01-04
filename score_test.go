@@ -7,52 +7,6 @@ import (
 	"testing"
 )
 
-func TestIndexer(t *testing.T) {
-	lookup := make(map[CgmlstSt]int)
-	lookup["abc123"] = 0
-	lookup["bcd234"] = 1
-	indexer := NewIndexer(lookup)
-	indexer.Index(Profile{
-		ST: "abc123",
-		Matches: map[string]interface{}{
-			"gene1": 1,
-			"gene2": 1,
-			"gene3": 1,
-		},
-	})
-	index := indexer.indices[indexer.lookup["abc123"]]
-	if value := index.Genes.blocks[0]; value != 7 {
-		t.Fatalf("Got %d, expected 7\n", value)
-	}
-
-	indexer.Index(Profile{
-		ST: "bcd234",
-		Matches: map[string]interface{}{
-			"gene1": 2,
-			"gene2": 2,
-			"gene4": 1,
-		},
-	})
-
-	valueOfGene3 := (1 << indexer.geneTokens.Get(AlleleKey{
-		"gene3",
-		nil,
-	}))
-	valueOfGene4 := (1 << indexer.geneTokens.Get(AlleleKey{
-		"gene4",
-		nil,
-	}))
-	expectedValue := 7 - valueOfGene3 + valueOfGene4
-
-	index = indexer.indices[indexer.lookup["bcd234"]]
-	if value := index.Genes.blocks[0]; value != uint64(expectedValue) {
-		t.Fatalf("Got %d, expected %d\n", value, expectedValue)
-	}
-	if value := index.Alleles.blocks[0]; value != 56 {
-		t.Fatalf("Got %d, expected 56\n", value)
-	}
-}
-
 func TestComparer(t *testing.T) {
 	profiles := [...]Profile{
 		Profile{
@@ -82,12 +36,7 @@ func TestComparer(t *testing.T) {
 		},
 	}
 
-	lookup := make(map[CgmlstSt]int)
-	lookup["abc123"] = 0
-	lookup["bcd234"] = 1
-	lookup["cde345"] = 2
-
-	indexer := NewIndexer(lookup)
+	indexer := NewIndexer([]string{"abc123", "bcd234", "cde345"})
 	for i, p := range profiles {
 		indexer.Index(p)
 		for j := 0; j < 10000; j++ {
@@ -148,11 +97,13 @@ func TestScoreAll(t *testing.T) {
 
 	STs := []string{"abc123", "bcd234", "cde345"}
 	scores := NewScores(STs)
-	profiles := NewProfileStore([]string{"bcd234", "abc123", "cde345"})
+
+	indexer := NewIndexer(STs)
 	for _, p := range testProfiles {
-		profiles.Add(p)
+		indexer.Index(p)
 	}
-	scoreComplete, errChan := scoreAll(&scores, &profiles, ProgressSinkHole())
+
+	scoreComplete, errChan := scoreAll(&scores, indexer, ProgressSinkHole())
 	select {
 	case err := <-errChan:
 		if err != nil {
@@ -176,36 +127,17 @@ func TestScoreAll(t *testing.T) {
 	}
 }
 
-func TestTokeniser(t *testing.T) {
-	tokens := NewTokeniser()
-	if token := tokens.Get(AlleleKey{"foo", 1}); token != 0 {
-		t.Fatal("Wanted 0")
-	}
-	if token := tokens.Get(AlleleKey{"foo", 1}); token != 0 {
-		t.Fatal("Wanted 0")
-	}
-	if token := tokens.Get(AlleleKey{"bar", 1}); token != 1 {
-		t.Fatal("Wanted 1")
-	}
-	if token := tokens.Get(AlleleKey{"foo", 1}); token != 0 {
-		t.Fatal("Wanted 0")
-	}
-	if token := tokens.Get(AlleleKey{"foo", "1"}); token != 2 {
-		t.Fatal("Wanted 2")
-	}
-}
-
 func TestScoreAllFakeData(t *testing.T) {
 	testFile, err := os.Open("testdata/FakeProfiles.bson")
 	if err != nil {
 		t.Fatal("Couldn't load test data")
 	}
 
-	profiles, scores, _, _, _, err := parse(testFile, ProgressSinkHole())
+	index, scores, _, _, _, err := parse(testFile, ProgressSinkHole())
 	if err != nil {
 		t.Fatal(err)
 	}
-	scoreComplete, errChan := scoreAll(&scores, &profiles, ProgressSinkHole())
+	scoreComplete, errChan := scoreAll(&scores, index, ProgressSinkHole())
 	select {
 	case err := <-errChan:
 		if err != nil {
