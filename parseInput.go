@@ -458,12 +458,14 @@ func parseMatch(matchDoc *bsonkit.Document) (gene string, id interface{}, err er
 	for matchDoc.Next() {
 		switch string(matchDoc.Key()) {
 		case "gene":
-			if err = matchDoc.Value(&gene); err != nil {
+			var g interface{}
+			if g, err = matchDoc.RawValue(); err != nil {
 				err = errors.New("Bad value for gene")
 				return
 			}
+			gene = g.(string)
 		case "id":
-			if err = matchDoc.Value(&id); err != nil {
+			if id, err = matchDoc.RawValue(); err != nil {
 				err = errors.New("Bad value for allele id")
 				return
 			}
@@ -500,9 +502,11 @@ func parseCgMlst(cgmlstDoc *bsonkit.Document, p *Profile) (err error) {
 	for cgmlstDoc.Next() {
 		switch string(cgmlstDoc.Key()) {
 		case "st":
-			if err = cgmlstDoc.Value(&p.ST); err != nil {
+			var _ST interface{}
+			if _ST, err = cgmlstDoc.RawValue(); err != nil {
 				return errors.New("Bad value for st")
 			}
+			p.ST = _ST.(string)
 		case "matches":
 			if err = cgmlstDoc.Value(matches); err != nil {
 				return errors.New("Bad value for matches")
