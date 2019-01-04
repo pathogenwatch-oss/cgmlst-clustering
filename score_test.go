@@ -38,7 +38,7 @@ func TestComparer(t *testing.T) {
 
 	indexer := NewIndexer([]string{"abc123", "bcd234", "cde345"})
 	for i, p := range profiles {
-		indexer.Index(p)
+		indexer.Index(&p)
 		for j := 0; j < 10000; j++ {
 			indexer.alleleTokens.Get(AlleleKey{
 				fmt.Sprintf("fake-%d", i),
@@ -100,7 +100,7 @@ func TestScoreAll(t *testing.T) {
 
 	indexer := NewIndexer(STs)
 	for _, p := range testProfiles {
-		indexer.Index(p)
+		indexer.Index(&p)
 	}
 
 	scoreComplete, errChan := scoreAll(&scores, indexer, ProgressSinkHole())

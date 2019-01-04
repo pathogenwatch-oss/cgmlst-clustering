@@ -527,22 +527,22 @@ func parseCgMlst(cgmlstDoc *bsonkit.Document, p *Profile) (err error) {
 	return
 }
 
-func parseProfile(doc *bsonkit.Document) (profile Profile, err error) {
+func parseProfile(doc *bsonkit.Document, profile *Profile) (err error) {
 	cgmlstDoc := new(bsonkit.Document)
 	doc.Seek(0)
 	for doc.Next() {
 		if string(doc.Key()) == "results" {
 			if err = doc.Value(cgmlstDoc); err != nil {
-				return profile, errors.New("Bad value for analysis")
+				return errors.New("Bad value for analysis")
 			}
-			err = parseCgMlst(cgmlstDoc, &profile)
-			return profile, err
+			err = parseCgMlst(cgmlstDoc, profile)
+			return err
 		}
 	}
 	if doc.Err != nil {
-		return profile, doc.Err
+		return doc.Err
 	}
-	return profile, errors.New("Could not find cgmlst in analysis")
+	return errors.New("Could not find cgmlst in analysis")
 }
 
 type GenomeSTPair struct {
@@ -607,7 +607,8 @@ func estimateCacheReusability(cacheSTs []CgmlstSt, requestedSts []CgmlstSt) int 
 }
 
 func parseAndIndex(doc *bsonkit.Document, index *Indexer) (bool, error) {
-	p, err := parseProfile(doc)
+	p := Profile{}
+	err := parseProfile(doc, &p)
 	if err != nil {
 		return false, err
 	}
@@ -616,7 +617,7 @@ func parseAndIndex(doc *bsonkit.Document, index *Indexer) (bool, error) {
 		return false, errors.New("Profile doc had an invalid fileId")
 	}
 
-	return index.Index(p)
+	return index.Index(&p)
 }
 
 func parse(r io.Reader, progress chan ProgressEvent) (index *Indexer, scores scoresStore, maxThreshold int, existingClusters Clusters, canReuseCache bool, err error) {

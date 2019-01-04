@@ -7,7 +7,7 @@ import (
 func TestIndexer(t *testing.T) {
 	STs := []string{"abc123", "bcd234"}
 	indexer := NewIndexer(STs)
-	indexer.Index(Profile{
+	indexer.Index(&Profile{
 		ST: "abc123",
 		Matches: map[string]interface{}{
 			"gene1": 1,
@@ -20,7 +20,7 @@ func TestIndexer(t *testing.T) {
 		t.Fatalf("Got %d, expected 7\n", value)
 	}
 
-	indexer.Index(Profile{
+	indexer.Index(&Profile{
 		ST: "bcd234",
 		Matches: map[string]interface{}{
 			"gene1": 2,

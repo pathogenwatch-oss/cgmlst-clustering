@@ -72,7 +72,7 @@ func NewIndexer(STs []CgmlstSt) (i *Indexer) {
 }
 
 // Index returns true if already indexed
-func (i *Indexer) Index(profile Profile) (bool, error) {
+func (i *Indexer) Index(profile *Profile) (bool, error) {
 	var (
 		offset int
 		ok     bool
