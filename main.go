@@ -16,8 +16,11 @@ func isSmaller(a, b bsonkit.ObjectID) bool {
 }
 
 func main() {
-	r := (io.Reader)(os.Stdin)
-	enc := json.NewEncoder(os.Stdout)
+	_main(os.Stdin, os.Stdout)
+}
+
+func _main(r io.Reader, w io.Writer) {
+	enc := json.NewEncoder(w)
 	progressIn, progressOut := NewProgressWorker()
 	defer func() { progressIn <- ProgressEvent{EXIT, 0} }()
 	results := make(chan ClusterOutput, 100)
@@ -26,11 +29,11 @@ func main() {
 	go func() {
 		for {
 			select {
-			case p := <-progressOut:
-				enc.Encode(p)
-			case r, more := <-results:
+			case progress := <-progressOut:
+				enc.Encode(progress)
+			case result, more := <-results:
 				if more {
-					enc.Encode(r)
+					enc.Encode(result)
 				} else {
 					done <- true
 				}

@@ -51,8 +51,8 @@ type ProgressWorker struct {
 
 // Somewhat realistic relative costs
 const (
-	PARSE_COST   = 46000
-	INDEX_COST   = 16000
+	PARSE_COST = 46000
+	// INDEX_COST   = 16000
 	SCORE_COST   = 22
 	CACHING_COST = SCORE_COST / 5
 )
@@ -62,7 +62,7 @@ func (w *ProgressWorker) Update(msg ProgressEvent) {
 	case PROFILES_EXPECTED:
 		nSts := msg.EventValue
 		nScores := (nSts * (nSts - 1)) / 2
-		w.totalWork = (PARSE_COST + INDEX_COST) * nSts
+		w.totalWork = (PARSE_COST) * nSts
 		w.totalWork += (SCORE_COST + w.cachingCost) * nScores
 	case CACHE_DOC_PARSED:
 		if w.state < PARSING_CACHE {
@@ -79,13 +79,6 @@ func (w *ProgressWorker) Update(msg ProgressEvent) {
 		newTotal := w.totalWork - (msg.EventValue * SCORE_COST)
 		w.workDone = w.workDone * newTotal / w.totalWork
 		w.totalWork = newTotal
-	case PROFILE_INDEXED:
-		if w.state < INDEXING_PROFILES {
-			w.state = INDEXING_PROFILES
-		} else if w.state > SAVING_RESULTS {
-			return
-		}
-		w.workDone += INDEX_COST
 	case SCORE_CALCULATED:
 		if w.state < SCORING {
 			w.state = SCORING

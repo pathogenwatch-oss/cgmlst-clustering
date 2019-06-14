@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"reflect"
 	"testing"
@@ -132,4 +133,26 @@ func TestHigherThreshold(t *testing.T) {
 	if len(doc.Sts) != 3 {
 		t.Fatalf("%+v\n", doc)
 	}
+}
+
+type MockWriter struct {
+	maxPercent float32
+	t          *testing.T
+}
+
+func (w MockWriter) Write(data []byte) (n int, err error) {
+	fmt.Printf("%s", data)
+	return len(data), nil
+}
+
+func TestAll(t *testing.T) {
+	testFile, err := os.Open("testdata/FakeProfiles.bson")
+	if err != nil {
+		t.Fatal("Couldn't load test data")
+	}
+	w := MockWriter{
+		maxPercent: 0,
+		t:          t,
+	}
+	_main(testFile, w)
 }
