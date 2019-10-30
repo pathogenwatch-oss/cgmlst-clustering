@@ -19,7 +19,7 @@ func main() {
 	_main(os.Stdin, os.Stdout)
 }
 
-func _main(r io.Reader, w io.Writer) {
+func _main(r io.Reader, w io.Writer) ([]CgmlstSt, Clusters, []int) {
 	enc := json.NewEncoder(w)
 	progressIn, progressOut := NewProgressWorker()
 	defer func() { progressIn <- ProgressEvent{EXIT, 0} }()
@@ -93,4 +93,5 @@ func _main(r io.Reader, w io.Writer) {
 
 	close(results)
 	<-done
+	return scores.STs, clusters, distances
 }
