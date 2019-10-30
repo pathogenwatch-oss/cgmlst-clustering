@@ -40,7 +40,7 @@ function mutate(seed) {
   missingRate = mutationRate * 0.02 // What is the chance it's missing
   mutation = []
   missing = 0
-  for (let i = 0; i < nGenes; i++) {
+  for (let i = 0; i < seed.length; i++) {
     r = random()
     if (r < mutationRate) {
       mutation.push(knownAllele())
@@ -122,12 +122,12 @@ async function appendScores(data, scoresFile) {
     onDone = resolve
   })
   appended = 0
-  
+
   gunzip = zlib.createGunzip()
   lines = readline.createInterface({
     input: fs.createReadStream(scoresFile).pipe(gunzip)
   })
-  
+
   lines.on('line', line => {
     data.push(JSON.parse(line))
     appended++
@@ -143,8 +143,159 @@ async function appendScores(data, scoresFile) {
   return out
 }
 
-async function main() {
-  // Make some fake profiles
+function smallDataset() {
+  // This is a handcoded dataset which looks like this:
+    // Loci
+      // A 1 1 1 1 1
+      // B 2 1 1 1 1
+      // C 2 2 2 2 2
+      // D 2 - 1 2 2
+      // E 3 3 3 3 3
+
+    // Distance matrix
+      //   A B C D E
+      // A 0 1 5 3 5
+      // B   0 4 2 5
+      // C     0 1 5
+      // D       0 4
+      // E         0
+
+  const request = { STs: ["A", "B", "C", "D", "E"], maxThreshold: 10 }
+  let cache = {
+    pi: [1, 2, 2],
+    lambda: [1, 4, 2147483647],
+    STs: ["A", "B", "C"],
+    edges: {
+      "0": [],
+      "1": [[0, 1]],
+      "2": [],
+      "3": [],
+      "4": [[1, 2]],
+      "5": [[0, 2]],
+      "6": [],
+      "7": [],
+      "8": [],
+      "9": [],
+      "10": [],
+    },
+    threshold: 10
+  }
+  const docs = []
+  docs.push({
+    _id: new BSON.ObjectID(objectId(1)),
+    task: "cgmlst",
+    version: "v1",
+    _public: false,
+    results: {
+      st: "A",
+      matches: [
+        { gene: 'gene1', id: 1 },
+        { gene: 'gene2', id: 1 },
+        { gene: 'gene3', id: 1 },
+        { gene: 'gene4', id: 1 },
+        { gene: 'gene5', id: 1 }
+      ],
+    }
+  })
+  docs.push({
+    _id: new BSON.ObjectID(objectId(2)),
+    task: "cgmlst",
+    version: "v1",
+    _public: false,
+    results: {
+      st: "B",
+      matches: [
+        { gene: 'gene1', id: 2 },
+        { gene: 'gene2', id: 1 },
+        { gene: 'gene3', id: 1 },
+        { gene: 'gene4', id: 1 },
+        { gene: 'gene5', id: 1 }
+      ],
+    }
+  })
+  docs.push({
+    _id: new BSON.ObjectID(objectId(3)),
+    task: "cgmlst",
+    version: "v1",
+    _public: false,
+    results: {
+      st: "C",
+      matches: [
+        { gene: 'gene1', id: 2 },
+        { gene: 'gene2', id: 2 },
+        { gene: 'gene3', id: 2 },
+        { gene: 'gene4', id: 2 },
+        { gene: 'gene5', id: 2 }
+      ],
+    }
+  })
+  docs.push({
+    _id: new BSON.ObjectID(objectId(4)),
+    task: "cgmlst",
+    version: "v1",
+    _public: false,
+    results: {
+      st: "D",
+      matches: [
+        { gene: 'gene1', id: 2 },
+        // { gene: 'gene2', id: 1 },
+        { gene: 'gene3', id: 1 },
+        { gene: 'gene4', id: 2 },
+        { gene: 'gene5', id: 2 }
+      ],
+    }
+  })
+  docs.push({
+    _id: new BSON.ObjectID(objectId(5)),
+    task: "cgmlst",
+    version: "v1",
+    _public: false,
+    results: {
+      st: "E",
+      matches: [
+        { gene: 'gene1', id: 3 },
+        { gene: 'gene2', id: 3 },
+        { gene: 'gene3', id: 3 },
+        { gene: 'gene4', id: 3 },
+        { gene: 'gene5', id: 3 }
+      ],
+    }
+  })
+  dumpBson("SmallDatasetWithoutCache.bson", [request, ...docs])
+  dumpBson("SmallDatasetWithCache.bson", [request, cache, ...docs])
+
+  // Change the order of the STs in the cache (but not the "request")
+  //   A B D C E
+  // A 0 1 3 5 5
+  // B   0 2 4 5
+  // D     0 1 4
+  // C       0 5
+  // E         0
+
+  cache = {
+    pi: [1, 2, 2],
+    lambda: [1, 2, 2147483647],
+    STs: ["A", "B", "D"],
+    edges: {
+      "0": [],
+      "1": [[0, 1]],
+      "2": [[1, 2]],
+      "3": [[0, 2]],
+      "4": [],
+      "5": [],
+      "6": [],
+      "7": [],
+      "8": [],
+      "9": [],
+      "10": [],
+    },
+    threshold: 10
+  }
+  dumpBson("SmallDatasetWithReorderedCache.bson", [request, cache, ...docs])
+}
+
+function bigDataset() {
+  random = getRandom(1)
   nProfiles = 7000
   request = { STs: [], maxThreshold: 50 }
   for (let i = 0; i < nProfiles; i++) {
@@ -163,6 +314,9 @@ async function main() {
   // If this assertion passes, the test data should be consistent
   dumpBson("FakeProfiles.bson", profiles, true)
 
+  dumpBson("FakeProfilesWithoutCache.bson", [request])
+  dumpBson("FakeProfilesWithoutCache.bson", profiles, true)
+
   // Just the public profiles
   request = { STs: [], maxThreshold: 50 }
   fakeData = [request]
@@ -175,7 +329,9 @@ async function main() {
     }
   }
   dumpBson("FakePublicProfiles.bson", fakeData)
+}
 
+function testParseRequestDoc() {
   dumpBson("TestParseRequestDoc.bson", [
     {
       STs: [ "abc", "def", "ghi" ],
@@ -195,7 +351,9 @@ async function main() {
       STs: [ "abc", "def", "ghi" ]
     },
   ])
+}
 
+function testParseCache() {
   dumpBson("TestParseCache.bson", [
     {
       threshold: 5,
@@ -212,7 +370,9 @@ async function main() {
       }
     }
   ])
+}
 
+function testUpdateProfiles() {
   dumpBson("TestUpdateProfiles.bson", [
     {
       "_id":        new BSON.ObjectID(),
@@ -227,7 +387,9 @@ async function main() {
       }
     }
   ])
+}
 
+function testParse() {
   dumpBson("TestParse.bson", [
     {
       STs: ["a", "e", "b", "c", "d"],
@@ -280,7 +442,9 @@ async function main() {
       }
     }
   ])
+}
 
+function testParseNoCache() {
   dumpBson("TestParseNoCache.bson", [
     {
       STs: ["a", "e", "b", "c", "d"],
@@ -309,7 +473,9 @@ async function main() {
       }
     }
   ])
+}
 
+function testParsePartialCache() {
   dumpBson("TestParsePartialCache.bson", [
     {
       STs: ["a", "e", "b", "c", "d"],
@@ -360,7 +526,9 @@ async function main() {
       }
     }
   ])
+}
 
+function testDuplicatePi() {
   dumpBson("TestDuplicatePi.bson", [
     {
       pi: [1, 2, 3]
@@ -372,7 +540,10 @@ async function main() {
       pi: [4, 5]
     }
   ])
+}
 
+
+function testRequestIsSubset() {
   // What if someone deleted just one of their genomes
   dumpBson("TestRequestIsSubset.bson", [
     {
@@ -426,7 +597,9 @@ async function main() {
       }
     }
   ])
+}
 
+function testRequestHasHigherThreshold() {
   dumpBson("TestRequestHasHigherThreshold.bson", [
     {
       STs: ["a", "b", "d"],
@@ -490,4 +663,18 @@ async function main() {
   ])
 }
 
-main().then(() => console.log("Done")).catch(err => console.log(err))
+function main() {
+  smallDataset()
+  bigDataset()
+  testParseRequestDoc()
+  testParseCache()
+  testUpdateProfiles()
+  testParse()
+  testParseNoCache()
+  testParsePartialCache()
+  testDuplicatePi()
+  testRequestIsSubset()
+  testRequestHasHigherThreshold()
+}
+
+main()
