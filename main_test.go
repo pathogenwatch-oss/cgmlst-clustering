@@ -235,3 +235,28 @@ func TestSmallDatasetWithReorderedCache(t *testing.T) {
 		t.Fatal("Wrong lambda")
 	}
 }
+
+func TestSmallDatasetWithUnusedCache(t *testing.T) {
+	testFile, err := os.Open("testdata/SmallDatasetWithUnusedCache.bson")
+	if err != nil {
+		t.Fatal("Couldn't load test data")
+	}
+	w := MockWriter{
+		maxPercent: 0,
+		t:          t,
+		silent:     true,
+	}
+	STs, clusters, distances := _main(testFile, w)
+	if !reflect.DeepEqual(STs, []CgmlstSt{"A", "C", "D", "E"}) {
+		t.Fatal("Wrong STs")
+	}
+	if !reflect.DeepEqual(distances, []int{5, 3, 1, 5, 5, 4}) {
+		t.Fatal("Wrong distances")
+	}
+	if !reflect.DeepEqual(clusters.pi, []int{2, 2, 4, 4}) {
+		t.Fatal("Wrong pi")
+	}
+	if !reflect.DeepEqual(clusters.lambda, []int{3, 1, 4, 2147483647}) {
+		t.Fatal("Wrong lambda")
+	}
+}

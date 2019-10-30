@@ -160,7 +160,7 @@ function smallDataset() {
       // D       0 4
       // E         0
 
-  const request = { STs: ["A", "B", "C", "D", "E"], maxThreshold: 10 }
+  let request = { STs: ["A", "B", "C", "D", "E"], maxThreshold: 10 }
   let cache = {
     pi: [1, 2, 2],
     lambda: [1, 4, 2147483647],
@@ -292,6 +292,28 @@ function smallDataset() {
     threshold: 10
   }
   dumpBson("SmallDatasetWithReorderedCache.bson", [request, cache, ...docs])
+
+  request = { STs: ["A", "C", "D", "E"], maxThreshold: 10 }
+  cache = {
+    pi: [1, 2, 2],
+    lambda: [1, 4, 2147483647],
+    STs: ["A", "B", "C"],
+    edges: {
+      "0": [],
+      "1": [[0, 1]],
+      "2": [],
+      "3": [],
+      "4": [[1, 2]],
+      "5": [[0, 2]],
+      "6": [],
+      "7": [],
+      "8": [],
+      "9": [],
+      "10": [],
+    },
+    threshold: 10
+  }
+  dumpBson("SmallDatasetWithUnusedCache.bson", [request, cache, docs[0], ...docs.slice(2)])
 }
 
 function bigDataset() {
