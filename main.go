@@ -41,10 +41,17 @@ func _main(r io.Reader, w io.Writer) ([]CgmlstSt, Clusters, []int) {
 		}
 	}()
 
-	index, scores, maxThreshold, existingClusters, canReuseCache, err := parse(r, progressIn)
-	if err != nil {
+	request, cache, index, err := parse(r, progressIn)
+	if err := index.Complete(); err != nil {
 		panic(err)
 	}
+
+	var scores scoresStore
+	if scores, err = NewScores(request, cache, index); err != nil {
+		panic(err)
+	}
+
+	progressIn <- ProgressEvent{CACHED_SCORES_EXPECTED, scores.Done()}
 
 	tick := time.Tick(time.Second)
 	go func() {
@@ -54,7 +61,7 @@ func _main(r io.Reader, w io.Writer) ([]CgmlstSt, Clusters, []int) {
 		}
 	}()
 
-	scoreComplete, errChan := scoreAll(&scores, index, progressIn)
+	scoreComplete, errChan := scores.Complete(index, progressIn)
 
 	select {
 	case err := <-errChan:
@@ -65,28 +72,29 @@ func _main(r io.Reader, w io.Writer) ([]CgmlstSt, Clusters, []int) {
 	}
 	log.Printf("%d scores remaining\n", scores.Todo())
 
-	progressIn <- ProgressEvent{DISTANCES_STARTED, 0}
-	distances, err := scores.Distances()
-	if err != nil {
+	progressIn <- ProgressEvent{CLUSTERING_STARTED, 0}
+
+	var distances []int
+	if distances, err = scores.Distances(); err != nil {
 		panic(err)
 	}
+	nItems := len(scores.STs)
 
-	progressIn <- ProgressEvent{CLUSTERING_STARTED, 0}
 	var clusters Clusters
-	if canReuseCache {
-		clusters, err = UpdateClusters(existingClusters, len(scores.STs), distances)
+	if scores.canReuseCache {
+		clusters, err = ClusterFromCache(distances, nItems, cache)
 		if err != nil {
 			panic(err)
 		}
 	} else {
-		clusters, err = NewClusters(len(scores.STs), distances)
+		clusters, err = ClusterFromScratch(distances, nItems)
 		if err != nil {
 			panic(err)
 		}
 	}
 
-	progressIn <- ProgressEvent{RESULTS_TO_SAVE, maxThreshold + 1}
-	for c := range clusters.Format(maxThreshold, distances, scores.STs) {
+	progressIn <- ProgressEvent{RESULTS_TO_SAVE, request.Threshold + 1}
+	for c := range clusters.Format(request.Threshold, distances, scores.STs) {
 		results <- c
 		progressIn <- ProgressEvent{SAVED_RESULT, 1}
 	}
