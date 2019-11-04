@@ -36,7 +36,7 @@ func TestGet(t *testing.T) {
 
 	scores := scoresStore{scores: distances, STs: []string{"a", "b", "c", "d", "e", "f"}}
 	distanceValues, _ := scores.Distances()
-	clusters, err := NewClusters(len(scores.STs), distanceValues)
+	clusters, err := ClusterFromScratch(distanceValues, len(scores.STs))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func TestAnotherGet(t *testing.T) {
 
 	scores := scoresStore{scores: distances, STs: []string{"a", "b", "c", "d", "e", "f", "g"}}
 	distanceValues, _ := scores.Distances()
-	clusters, err := NewClusters(len(scores.STs), distanceValues)
+	clusters, err := ClusterFromScratch(distanceValues, len(scores.STs))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,32 +127,36 @@ func TestUpdate(t *testing.T) {
 	scores := scoresStore{scores: distances, STs: []string{"a", "b", "c", "d", "e", "f", "g"}}
 	distanceValues, _ := scores.Distances()
 
-	partial, err := NewClusters(3, distanceValues[:3])
+	partial, err := ClusterFromScratch(distanceValues[:3], 3)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	expected_lambda := []int{2, 10, ALMOST_INF}
-	expected_pi := []int{1, 2, 2}
-	compareSlices(t, partial.lambda, expected_lambda)
-	compareSlices(t, partial.pi, expected_pi)
+	expectedLambda := []int{2, 10, ALMOST_INF}
+	expectedPi := []int{1, 2, 2}
+	compareSlices(t, partial.lambda, expectedLambda)
+	compareSlices(t, partial.pi, expectedPi)
 
-	complete, err := NewClusters(len(scores.STs), distanceValues)
+	complete, err := ClusterFromScratch(distanceValues, len(scores.STs))
 	if err != nil {
 		t.Fatal(err)
 	}
 
+	cache := Cache{
+		Pi:     partial.pi,
+		Lambda: partial.lambda,
+	}
 	for i := 0; i < 3; i++ {
 		distances[i] = scoreDetails{}
 	}
-	updated, err := UpdateClusters(partial, len(scores.STs), distanceValues)
+	updated, err := ClusterFromCache(distanceValues, len(scores.STs), &cache)
 	if err != nil {
 		t.Fatal(err)
 	}
-	expected_lambda = []int{2, 4, 3, 4, 5, 5, ALMOST_INF}
-	expected_pi = []int{1, 4, 3, 5, 6, 6, 6}
-	compareSlices(t, updated.lambda, expected_lambda)
-	compareSlices(t, updated.pi, expected_pi)
+	expectedLambda = []int{2, 4, 3, 4, 5, 5, ALMOST_INF}
+	expectedPi = []int{1, 4, 3, 5, 6, 6, 6}
+	compareSlices(t, updated.lambda, expectedLambda)
+	compareSlices(t, updated.pi, expectedPi)
 
 	compareSlices(t, updated.lambda, complete.lambda)
 	compareSlices(t, updated.pi, complete.pi)
@@ -174,32 +178,36 @@ func TestAnotherUpdate(t *testing.T) {
 	scores := scoresStore{scores: distances, STs: []string{"a", "b", "c", "d"}}
 	distanceValues, _ := scores.Distances()
 
-	partial, err := NewClusters(3, distanceValues[:3])
+	partial, err := ClusterFromScratch(distanceValues[:3], 3)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	expected_lambda := []int{3, 5, ALMOST_INF}
-	expected_pi := []int{2, 2, 2}
-	compareSlices(t, partial.lambda, expected_lambda)
-	compareSlices(t, partial.pi, expected_pi)
+	expectedLambda := []int{3, 5, ALMOST_INF}
+	expectedPi := []int{2, 2, 2}
+	compareSlices(t, partial.lambda, expectedLambda)
+	compareSlices(t, partial.pi, expectedPi)
 
-	complete, err := NewClusters(len(scores.STs), distanceValues)
+	complete, err := ClusterFromScratch(distanceValues, len(scores.STs))
 	if err != nil {
 		t.Fatal(err)
 	}
 
+	cache := Cache{
+		Pi:     partial.pi,
+		Lambda: partial.lambda,
+	}
 	for i := 0; i < 3; i++ {
 		distances[i] = scoreDetails{}
 	}
-	updated, err := UpdateClusters(partial, len(scores.STs), distanceValues)
+	updated, err := ClusterFromCache(distanceValues, len(scores.STs), &cache)
 	if err != nil {
 		t.Fatal(err)
 	}
-	expected_lambda = []int{3, 1, 2, ALMOST_INF}
-	expected_pi = []int{3, 3, 3, 3}
-	compareSlices(t, updated.lambda, expected_lambda)
-	compareSlices(t, updated.pi, expected_pi)
+	expectedLambda = []int{3, 1, 2, ALMOST_INF}
+	expectedPi = []int{3, 3, 3, 3}
+	compareSlices(t, updated.lambda, expectedLambda)
+	compareSlices(t, updated.pi, expectedPi)
 
 	compareSlices(t, updated.lambda, complete.lambda)
 	compareSlices(t, updated.pi, complete.pi)
@@ -257,7 +265,7 @@ func TestRandomClusters(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		clusters, err := NewClusters(nScores, distances)
+		clusters, err := ClusterFromScratch(distances, nScores)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -282,7 +290,7 @@ func TestLotsOfRandomClusters(t *testing.T) {
 	}
 	log.Println("Made the fake scores")
 
-	clusters, err := NewClusters(nScores, distances)
+	clusters, err := ClusterFromScratch(distances, nScores)
 	if err != nil {
 		t.Fatal(err)
 	}

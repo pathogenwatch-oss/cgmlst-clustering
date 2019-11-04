@@ -23,12 +23,16 @@ type ClusterOutput struct {
 	Edges     map[int][][2]int `json:"edges"`
 }
 
-func NewClusters(nItems int, distances []int) (c Clusters, err error) {
-	var existing Clusters
-	return UpdateClusters(existing, nItems, distances)
+func ClusterFromScratch(distances []int, nItems int) (c Clusters, err error) {
+	return ClusterFromCache(distances, nItems, NewCache())
 }
 
-func UpdateClusters(existing Clusters, nItems int, distances []int) (c Clusters, err error) {
+func ClusterFromCache(distances []int, nItems int, cache *Cache) (c Clusters, err error) {
+	if len(distances) != (nItems*(nItems-1))/2 {
+		err = errors.New("Wrong number of distances given")
+		return
+	}
+
 	// If items are {a, b, c, d, e} then the distances between them should be arranged:
 	// distances := {
 	// 	(a => b),
@@ -37,26 +41,13 @@ func UpdateClusters(existing Clusters, nItems int, distances []int) (c Clusters,
 	// 	(a => e), (b => e), (c => e), (d => e),
 	// }
 
-	if len(distances) != (nItems*(nItems-1))/2 {
-		err = errors.New("Wrong number of distances given")
-		return
-	}
-	if existing.nItems > nItems {
-		err = errors.New("Output cluster should be bigger than input cluster")
-		return
-	} else if existing.nItems == nItems {
-		c = existing
-		return
-	}
-
 	c.pi = make([]int, nItems)
 	c.lambda = make([]int, nItems)
 	c.nItems = nItems
 
-	if existing.nItems > 0 {
-		copy(c.pi, existing.pi)
-		copy(c.lambda, existing.lambda)
-	}
+	copy(c.pi, cache.Pi)
+	copy(c.lambda, cache.Lambda)
+	nCacheItems := len(cache.Pi)
 
 	// Uses the SLINK algorithm for single linkage clustering
 	// http://www.cs.gsu.edu/~wkim/index_files/papers/sibson.pdf
@@ -70,10 +61,10 @@ func UpdateClusters(existing Clusters, nItems int, distances []int) (c Clusters,
 	// pi[i] is the biggest object in the cluster it joins
 
 	M := make([]int, nItems)
-	mStart := existing.nItems * (existing.nItems - 1) / 2
+	mStart := nCacheItems * (nCacheItems - 1) / 2
 	mEnd := mStart
 
-	for n := existing.nItems; n < nItems; n++ {
+	for n := nCacheItems; n < nItems; n++ {
 		// We build up pi and lambda by adding each datum in increasing size
 
 		// If the sequences are {a, b, c, d}
