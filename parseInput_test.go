@@ -165,8 +165,14 @@ func TestParse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = index.Complete(request.STs); err == nil {
-		t.Fatalf("Didn't supply all the required profiles\nSeen: %v\nRequested: %v\n", index.Seen, request.STs)
+	if err = index.Complete(); err == nil {
+		missing := make([]CgmlstSt, 0, len(request.STs))
+		for st, idx := range index.lookup {
+			if !index.indices[idx].Ready {
+				missing = append(missing, st)
+			}
+		}
+		t.Fatalf("Didn't supply all the required profiles\nMissing: %v\nRequested: %v\n", missing, request.STs)
 	}
 
 	var scores scoresStore

@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 )
 
@@ -110,4 +111,13 @@ func (i *Indexer) Index(profile *Profile) (bool, error) {
 	}
 	index.Ready = true
 	return false, nil
+}
+
+func (i *Indexer) Complete() error {
+	for st, idx := range i.lookup {
+		if !i.indices[idx].Ready {
+			return fmt.Errorf("Didn't see a profile for ST '%s'", st)
+		}
+	}
+	return nil
 }

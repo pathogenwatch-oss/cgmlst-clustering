@@ -22,8 +22,8 @@ func TestSortSts(t *testing.T) {
 		nEdges:    2,
 	}
 	index := Indexer{
-		Seen:   map[string]bool{"a": true, "b": true, "c": true},
-		lookup: map[string]int{"a": 0, "b": 1, "c": 2},
+		lookup:  map[string]int{"a": 0, "b": 1, "c": 2},
+		indices: []Index{Index{Ready: true}, Index{Ready: true}, Index{Ready: true}},
 	}
 	canReuseCache, STs, cacheToScoresMap := sortSts(request, &cache, &index)
 
@@ -107,8 +107,8 @@ func TestParseCacheScores(t *testing.T) {
 		STs: []CgmlstSt{"a", "b", "d", "e"},
 	}
 	index := Indexer{
-		lookup: map[string]int{"a": 0, "b": 1, "d": 2, "e": 3},
-		Seen:   map[string]bool{"a": true, "b": true, "d": true, "e": true},
+		lookup:  map[string]int{"a": 0, "b": 1, "d": 2, "e": 3},
+		indices: []Index{Index{Ready: true}, Index{Ready: true}, Index{Ready: true}, Index{Ready: true}},
 	}
 
 	scores, err := NewScores(request, cache, &index)
@@ -139,14 +139,14 @@ func BenchmarkScores(b *testing.B) {
 		Sts: []CgmlstSt{},
 	}
 	index := Indexer{
-		Seen:   make(map[CgmlstSt]bool),
-		lookup: make(map[CgmlstSt]int),
+		lookup:  make(map[CgmlstSt]int),
+		indices: make([]Index, 1000),
 	}
 	for i := 0; i < 1000; i++ {
 		st := fmt.Sprintf("st%d", i)
 		request.STs[i] = st
-		index.Seen[st] = true
 		index.lookup[st] = i
+		index.indices[i].Ready = true
 	}
 
 	b.ResetTimer()
@@ -171,14 +171,14 @@ func TestNewScores(t *testing.T) {
 		Sts: []CgmlstSt{},
 	}
 	index := Indexer{
-		Seen:   make(map[CgmlstSt]bool),
-		lookup: make(map[CgmlstSt]int),
+		indices: make([]Index, 1000),
+		lookup:  make(map[CgmlstSt]int),
 	}
 	for i := 0; i < 1000; i++ {
 		st := fmt.Sprintf("st%d", i)
 		request.STs[i] = st
-		index.Seen[st] = true
 		index.lookup[st] = i
+		index.indices[i].Ready = true
 	}
 
 	scores, err := NewScores(request, &cache, &index)
@@ -211,12 +211,12 @@ func TestScoresOrder(t *testing.T) {
 		Sts: []CgmlstSt{},
 	}
 	index := Indexer{
-		Seen:   make(map[CgmlstSt]bool),
-		lookup: make(map[CgmlstSt]int),
+		indices: make([]Index, len(request.STs)),
+		lookup:  make(map[CgmlstSt]int),
 	}
 	for i, st := range request.STs {
-		index.Seen[st] = true
 		index.lookup[st] = i
+		index.indices[i].Ready = true
 	}
 
 	scores, err := NewScores(request, &cache, &index)
@@ -253,12 +253,12 @@ func TestGetIndex(t *testing.T) {
 		Sts: []CgmlstSt{},
 	}
 	index := Indexer{
-		Seen:   make(map[CgmlstSt]bool),
-		lookup: make(map[CgmlstSt]int),
+		indices: make([]Index, len(request.STs)),
+		lookup:  make(map[CgmlstSt]int),
 	}
 	for i, st := range request.STs {
-		index.Seen[st] = true
 		index.lookup[st] = i
+		index.indices[i].Ready = true
 	}
 
 	scores, err := NewScores(request, &cache, &index)
@@ -299,12 +299,12 @@ func TestGetScore(t *testing.T) {
 		Sts: []CgmlstSt{},
 	}
 	index := Indexer{
-		Seen:   make(map[CgmlstSt]bool),
-		lookup: make(map[CgmlstSt]int),
+		indices: make([]Index, len(request.STs)),
+		lookup:  make(map[CgmlstSt]int),
 	}
 	for i, st := range request.STs {
-		index.Seen[st] = true
 		index.lookup[st] = i
+		index.indices[i].Ready = true
 	}
 
 	scores, err := NewScores(request, &cache, &index)
