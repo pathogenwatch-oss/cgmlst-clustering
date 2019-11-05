@@ -3,19 +3,32 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"flag"
 	"io"
 	"log"
 	"os"
+	"runtime/pprof"
 	"time"
 
 	"gitlab.com/cgps/bsonkit"
 )
+
+var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 
 func isSmaller(a, b bsonkit.ObjectID) bool {
 	return bytes.Compare(a[:], b[:]) < 0
 }
 
 func main() {
+	flag.Parse()
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+	}
 	_main(os.Stdin, os.Stdout)
 }
 
