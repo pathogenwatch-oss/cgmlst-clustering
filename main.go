@@ -3,21 +3,37 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"flag"
 	"io"
 	"log"
 	"os"
+	"runtime/pprof"
 	"time"
 
 	"gitlab.com/cgps/bsonkit"
 )
+
+var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 
 func isSmaller(a, b bsonkit.ObjectID) bool {
 	return bytes.Compare(a[:], b[:]) < 0
 }
 
 func main() {
-	r := (io.Reader)(os.Stdin)
-	enc := json.NewEncoder(os.Stdout)
+	flag.Parse()
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+	}
+	_main(os.Stdin, os.Stdout)
+}
+
+func _main(r io.Reader, w io.Writer) ([]CgmlstSt, Clusters, []int) {
+	enc := json.NewEncoder(w)
 	progressIn, progressOut := NewProgressWorker()
 	defer func() { progressIn <- ProgressEvent{EXIT, 0} }()
 	results := make(chan ClusterOutput, 100)
@@ -26,11 +42,11 @@ func main() {
 	go func() {
 		for {
 			select {
-			case p := <-progressOut:
-				enc.Encode(p)
-			case r, more := <-results:
+			case progress := <-progressOut:
+				enc.Encode(progress)
+			case result, more := <-results:
 				if more {
-					enc.Encode(r)
+					enc.Encode(result)
 				} else {
 					done <- true
 				}
@@ -38,10 +54,17 @@ func main() {
 		}
 	}()
 
-	profiles, scores, maxThreshold, existingClusters, canReuseCache, err := parse(r, progressIn)
-	if err != nil {
+	request, cache, index, err := parse(r, progressIn)
+	if err := index.Complete(); err != nil {
 		panic(err)
 	}
+
+	var scores scoresStore
+	if scores, err = NewScores(request, cache, index); err != nil {
+		panic(err)
+	}
+
+	progressIn <- ProgressEvent{CACHED_SCORES_EXPECTED, scores.Done()}
 
 	tick := time.Tick(time.Second)
 	go func() {
@@ -51,7 +74,7 @@ func main() {
 		}
 	}()
 
-	scoreComplete, errChan := scoreAll(&scores, &profiles, progressIn)
+	scoreComplete, errChan := scores.Complete(index, progressIn)
 
 	select {
 	case err := <-errChan:
@@ -62,32 +85,34 @@ func main() {
 	}
 	log.Printf("%d scores remaining\n", scores.Todo())
 
-	progressIn <- ProgressEvent{DISTANCES_STARTED, 0}
-	distances, err := scores.Distances()
-	if err != nil {
+	progressIn <- ProgressEvent{CLUSTERING_STARTED, 0}
+
+	var distances []int
+	if distances, err = scores.Distances(); err != nil {
 		panic(err)
 	}
+	nItems := len(scores.STs)
 
-	progressIn <- ProgressEvent{CLUSTERING_STARTED, 0}
 	var clusters Clusters
-	if canReuseCache {
-		clusters, err = UpdateClusters(existingClusters, len(scores.STs), distances)
+	if scores.canReuseCache {
+		clusters, err = ClusterFromCache(distances, nItems, cache)
 		if err != nil {
 			panic(err)
 		}
 	} else {
-		clusters, err = NewClusters(len(scores.STs), distances)
+		clusters, err = ClusterFromScratch(distances, nItems)
 		if err != nil {
 			panic(err)
 		}
 	}
 
-	progressIn <- ProgressEvent{RESULTS_TO_SAVE, maxThreshold + 1}
-	for c := range clusters.Format(maxThreshold, distances, scores.STs) {
+	progressIn <- ProgressEvent{RESULTS_TO_SAVE, request.Threshold + 1}
+	for c := range clusters.Format(request.Threshold, distances, scores.STs) {
 		results <- c
 		progressIn <- ProgressEvent{SAVED_RESULT, 1}
 	}
 
 	close(results)
 	<-done
+	return scores.STs, clusters, distances
 }

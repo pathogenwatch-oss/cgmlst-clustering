@@ -7,7 +7,6 @@ import (
 	"log"
 	"strconv"
 	"sync"
-	"sync/atomic"
 
 	"gitlab.com/cgps/bsonkit"
 )
@@ -22,6 +21,11 @@ type GenomeID = bsonkit.ObjectID
 type CgmlstSt = string
 type M = map[string]interface{}
 type L = []interface{}
+
+type Request struct {
+	STs       []CgmlstSt
+	Threshold int
+}
 
 func parseCgmlstStSlice(d *bsonkit.Document) (output []CgmlstSt, err error) {
 	d.Seek(0)
@@ -67,8 +71,9 @@ type Cache struct {
 	nEdges    int
 }
 
-func NewCache() Cache {
-	return Cache{Edges: make(map[int][][2]int), nEdges: 0}
+func NewCache() *Cache {
+	c := Cache{Edges: make(map[int][][2]int), nEdges: 0}
+	return &c
 }
 
 func (c *Cache) Update(cacheDoc *bsonkit.Document, maxThreshold int) (err error) {
@@ -287,197 +292,7 @@ type Profile struct {
 	Matches M
 }
 
-type ProfileStore struct {
-	lookup   map[CgmlstSt]int
-	profiles []Profile
-	seen     []bool
-}
-
-func NewProfileStore(STs []CgmlstSt) (profiles ProfileStore) {
-	profiles.lookup = make(map[CgmlstSt]int)
-	for i, st := range STs {
-		profiles.lookup[st] = i
-	}
-	profiles.profiles = make([]Profile, len(STs))
-	profiles.seen = make([]bool, len(STs))
-	return
-}
-
-func (profiles *ProfileStore) Add(p Profile) (duplicate bool, err error) {
-	idx, known := profiles.lookup[p.ST]
-	if !known {
-		return false, fmt.Errorf("unknown fileId %s", p.ST)
-	}
-
-	if profiles.seen[idx] {
-		// This is a duplicate of something we've already parsed
-		return true, nil
-	}
-
-	profiles.profiles[idx] = p
-	profiles.seen[idx] = true
-	return false, nil
-}
-
-func (profiles *ProfileStore) Get(ST CgmlstSt) (Profile, error) {
-	idx, known := profiles.lookup[ST]
-	if !known {
-		return Profile{}, fmt.Errorf("unknown ST %s", ST)
-	}
-	if seen := profiles.seen[idx]; !seen {
-		return Profile{}, fmt.Errorf("unknown ST %s", ST)
-	}
-	return profiles.profiles[idx], nil
-}
-
-func (profiles *ProfileStore) AddFromDoc(doc *bsonkit.Document) (bool, error) {
-	p, err := parseProfile(doc)
-	if err != nil {
-		return false, err
-	}
-
-	if p.ST == "" {
-		return false, errors.New("Profile doc had an invalid fileId")
-	}
-
-	return profiles.Add(p)
-}
-
-type scoreDetails struct {
-	stA, stB      int
-	value, status int
-}
-
-type scoresStore struct {
-	lookup map[CgmlstSt]int
-	scores []scoreDetails
-	STs    []CgmlstSt
-	todo   int32
-}
-
-func NewScores(STs []CgmlstSt) (s scoresStore) {
-	s.STs = STs
-	s.scores = make([]scoreDetails, len(STs)*(len(STs)-1)/2)
-	s.lookup = make(map[CgmlstSt]int)
-	for idx, st := range STs {
-		s.lookup[st] = idx
-	}
-	// TODO: Do we need to do this initialisation.  PENDING is probably the default value
-	idx := 0
-	for a := 1; a < len(STs); a++ {
-		for b := 0; b < a; b++ {
-			s.scores[idx] = scoreDetails{a, b, 0, PENDING}
-			idx++
-		}
-	}
-	s.todo = int32(len(s.scores))
-	return
-}
-
-func (s scoresStore) getIndex(stA int, stB int) (int, error) {
-	minIdx, maxIdx := stA, stB
-	if stA == stB {
-		return 0, fmt.Errorf("STs shouldn't both be %d", stA)
-	} else if stA > stB {
-		minIdx = stB
-		maxIdx = stA
-	}
-	scoreIdx := ((maxIdx * (maxIdx - 1)) / 2) + minIdx
-	return scoreIdx, nil
-}
-
-func (s *scoresStore) SetIdx(idx int, score int, status int) error {
-	s.scores[idx].value = score
-	s.scores[idx].status = status
-	atomic.AddInt32(&s.todo, -1)
-	return nil
-}
-
-func (s *scoresStore) Set(stA int, stB int, score int, status int) error {
-	idx, err := s.getIndex(stA, stB)
-	if err != nil {
-		return err
-	}
-	return s.SetIdx(idx, score, status)
-}
-
-func (s scoresStore) Get(stA int, stB int) (scoreDetails, error) {
-	idx, err := s.getIndex(stA, stB)
-	if err != nil {
-		return scoreDetails{}, err
-	}
-	return s.scores[idx], nil
-}
-
-func (s scoresStore) Distances() ([]int, error) {
-	distances := make([]int, len(s.scores))
-
-	for i := 0; i < len(distances); i++ {
-		score := s.scores[i]
-		if score.status == PENDING {
-			return distances, errors.New("Haven't found scores for all pairs of STs")
-		}
-		distances[i] = score.value
-	}
-
-	return distances, nil
-}
-
-func (s scoresStore) Todo() int32 {
-	return atomic.LoadInt32(&s.todo)
-}
-
-func (s *scoresStore) UpdateFromCache(c Cache, mapExistingToSts map[int]int, maxThreshold int) (err error) {
-	var (
-		distance                 int
-		aInExisting, bInExisting int
-		aInSts, bInSts           int
-		found                    bool
-	)
-
-	for distance = range c.Edges {
-		pairs := c.Edges[distance]
-		for _, pair := range pairs {
-			aInExisting = pair[0]
-			bInExisting = pair[1]
-
-			if aInSts, found = mapExistingToSts[aInExisting]; !found {
-				continue
-			}
-			if bInSts, found = mapExistingToSts[bInExisting]; !found {
-				continue
-			}
-
-			if err = s.Set(aInSts, bInSts, distance, FROM_CACHE); err != nil {
-				return err
-			}
-		}
-	}
-
-	if c.Threshold < maxThreshold {
-		// The cache is missing some edges because it was generated with a smaller
-		// threshold.
-		return
-	}
-
-	var maxExisting int
-	for _, v := range mapExistingToSts {
-		if v > maxExisting {
-			maxExisting = v
-		}
-	}
-	maxToSet := maxExisting * (maxExisting + 1) / 2
-	for idx := 0; idx < maxToSet; idx++ {
-		if s.scores[idx].status != FROM_CACHE {
-			s.scores[idx].value = ALMOST_INF
-			s.scores[idx].status = FROM_CACHE
-			atomic.AddInt32(&s.todo, -1)
-		}
-	}
-	return
-}
-
-func parseRequestDoc(doc *bsonkit.Document) (STs []CgmlstSt, maxThreshold int, err error) {
+func parseRequestDoc(doc *bsonkit.Document) (request Request, err error) {
 	stsDoc := new(bsonkit.Document)
 	var foundSts bool
 
@@ -489,7 +304,7 @@ func parseRequestDoc(doc *bsonkit.Document) (STs []CgmlstSt, maxThreshold int, e
 		} else if string(doc.Key()) == "maxThreshold" {
 			var v int32
 			err = doc.Value(&v)
-			maxThreshold = int(v)
+			request.Threshold = int(v)
 		}
 		if err != nil {
 			return
@@ -499,14 +314,20 @@ func parseRequestDoc(doc *bsonkit.Document) (STs []CgmlstSt, maxThreshold int, e
 		err = doc.Err
 	} else if !foundSts {
 		err = errors.New("Expected sts field in document")
-	} else if maxThreshold == 0 {
+	} else if request.Threshold == 0 {
 		err = errors.New("Expected maxThreshold field in document")
 	}
 	if err != nil {
 		return
 	}
 
-	STs, err = parseCgmlstStSlice(stsDoc)
+	request.STs, err = parseCgmlstStSlice(stsDoc)
+
+	if len(request.STs) == 0 {
+		err = errors.New("No STs found in first doc")
+		return
+	}
+
 	return
 }
 
@@ -514,12 +335,14 @@ func parseMatch(matchDoc *bsonkit.Document) (gene string, id interface{}, err er
 	for matchDoc.Next() {
 		switch string(matchDoc.Key()) {
 		case "gene":
-			if err = matchDoc.Value(&gene); err != nil {
+			var g interface{}
+			if g, err = matchDoc.RawValue(); err != nil {
 				err = errors.New("Bad value for gene")
 				return
 			}
+			gene = g.(string)
 		case "id":
-			if err = matchDoc.Value(&id); err != nil {
+			if id, err = matchDoc.RawValue(); err != nil {
 				err = errors.New("Bad value for allele id")
 				return
 			}
@@ -556,9 +379,11 @@ func parseCgMlst(cgmlstDoc *bsonkit.Document, p *Profile) (err error) {
 	for cgmlstDoc.Next() {
 		switch string(cgmlstDoc.Key()) {
 		case "st":
-			if err = cgmlstDoc.Value(&p.ST); err != nil {
+			var _ST interface{}
+			if _ST, err = cgmlstDoc.RawValue(); err != nil {
 				return errors.New("Bad value for st")
 			}
+			p.ST = _ST.(string)
 		case "matches":
 			if err = cgmlstDoc.Value(matches); err != nil {
 				return errors.New("Bad value for matches")
@@ -583,22 +408,22 @@ func parseCgMlst(cgmlstDoc *bsonkit.Document, p *Profile) (err error) {
 	return
 }
 
-func parseProfile(doc *bsonkit.Document) (profile Profile, err error) {
+func parseProfile(doc *bsonkit.Document, profile *Profile) (err error) {
 	cgmlstDoc := new(bsonkit.Document)
 	doc.Seek(0)
 	for doc.Next() {
 		if string(doc.Key()) == "results" {
 			if err = doc.Value(cgmlstDoc); err != nil {
-				return profile, errors.New("Bad value for analysis")
+				return errors.New("Bad value for analysis")
 			}
-			err = parseCgMlst(cgmlstDoc, &profile)
-			return profile, err
+			err = parseCgMlst(cgmlstDoc, profile)
+			return err
 		}
 	}
 	if doc.Err != nil {
-		return profile, doc.Err
+		return doc.Err
 	}
-	return profile, errors.New("Could not find cgmlst in analysis")
+	return errors.New("Could not find cgmlst in analysis")
 }
 
 type GenomeSTPair struct {
@@ -606,63 +431,21 @@ type GenomeSTPair struct {
 	ST CgmlstSt
 }
 
-func sortSts(existing []CgmlstSt, requested []CgmlstSt) (isSubset bool, output []CgmlstSt, mapExistingToOutput map[int]int) {
-	// We have a list of STs in the 'existing' cache and a list of 'requested' STs.
-	// If 'existing' is a subset of 'requested' we can reuse the cache, otherwise we can't
+func parseAndIndex(doc *bsonkit.Document, index *Indexer) (bool, error) {
+	p := Profile{}
+	err := parseProfile(doc, &p)
+	if err != nil {
+		return false, err
+	}
 
-	// We need a deduplicated list of all of the STs.  To reuse the cache, the 'existing' STs
-	// must come first and their order must be preserved.
+	if p.ST == "" {
+		return false, errors.New("Profile doc had an invalid fileId")
+	}
 
-	// Then, to use the existing edges, we need a map between their position in 'existing' and
-	// their position in the 'output'.  Normally that'll be 1->1, 2->2 except when one of
-	// them is deleted and then it goes 1->1, 3->2, 4->3 etc.
-	if len(existing) == 0 {
-		return false, requested, make(map[int]int)
-	}
-	isSubset = true // We're optimistic
-	output = make([]CgmlstSt, 0, len(existing)+len(requested))
-	// Seen is a bit overloaded
-	// If it's false, we know its one of the requested STs but not yet in the output
-	// If it's true, it's one of the requested STs and it's already in the output
-	// If it's not set, it isn't one of the requested STs.
-	seen := make(map[CgmlstSt]bool)
-	for _, st := range requested {
-		seen[st] = false
-	}
-	mapExistingToOutput = make(map[int]int)
-	for i, st := range existing {
-		if duplicate, found := seen[st]; found && !duplicate {
-			output = append(output, st)
-			mapExistingToOutput[i] = len(output) - 1
-			seen[st] = true
-		} else {
-			isSubset = false
-		}
-	}
-	for _, st := range requested {
-		if alreadyInOutput := seen[st]; !alreadyInOutput {
-			output = append(output, st)
-		}
-		seen[st] = true // true means it's in the requested STs
-	}
-	return
+	return index.Index(&p)
 }
 
-func estimateCacheReusability(cacheSTs []CgmlstSt, requestedSts []CgmlstSt) int {
-	count := 0
-	inReq := map[CgmlstSt]bool{}
-	for _, st := range requestedSts {
-		inReq[st] = true
-	}
-	for _, st := range cacheSTs {
-		if inReq[st] {
-			count++
-		}
-	}
-	return count
-}
-
-func parse(r io.Reader, progress chan ProgressEvent) (profiles ProfileStore, scores scoresStore, maxThreshold int, existingClusters Clusters, canReuseCache bool, err error) {
+func parse(r io.Reader, progress chan ProgressEvent) (request Request, cache *Cache, index *Indexer, err error) {
 	err = nil
 	errChan := make(chan error)
 	numWorkers := 5
@@ -690,31 +473,15 @@ func parse(r io.Reader, progress chan ProgressEvent) (profiles ProfileStore, sco
 		firstDoc = d
 	}
 
-	var requestedSts []CgmlstSt
-	for firstDoc.Next() {
-		if string(firstDoc.Key()) == "STs" {
-			requestedSts, maxThreshold, err = parseRequestDoc(firstDoc)
-			if err != nil {
-				return
-			}
-			break
-		}
-	}
-	if firstDoc.Err != nil {
-		err = firstDoc.Err
+	if request, err = parseRequestDoc(firstDoc); err != nil {
 		return
 	}
 
-	if len(requestedSts) == 0 {
-		err = errors.New("No STs found in first doc")
-		return
-	}
+	log.Printf("Found %d STs\n", len(request.STs))
+	progress <- ProgressEvent{PROFILES_EXPECTED, len(request.STs)}
 
-	log.Printf("Found %d STs\n", len(requestedSts))
-	progress <- ProgressEvent{PROFILES_EXPECTED, len(requestedSts)}
-
-	cache := NewCache()
-	profiles = NewProfileStore(requestedSts)
+	cache = NewCache()
+	index = NewIndexer(request.STs)
 
 	worker := func(workerID int) {
 		nDocs := 0
@@ -738,20 +505,12 @@ func parse(r io.Reader, progress chan ProgressEvent) (profiles ProfileStore, sco
 				case "edges":
 					fallthrough
 				case "threshold":
-					err = cache.Update(doc, maxThreshold)
+					err = cache.Update(doc, request.Threshold)
 					if err != nil {
 						log.Println(err)
 					}
-					if cache.Complete(maxThreshold) == nil {
-						overlap := estimateCacheReusability(cache.Sts, requestedSts)
-						if cache.Threshold >= maxThreshold {
-							progress <- ProgressEvent{CACHED_SCORES_EXPECTED, overlap * (overlap - 1) / 2}
-						} else {
-							progress <- ProgressEvent{CACHED_SCORES_EXPECTED, cache.CountDistances(maxThreshold)}
-						}
-					}
 				case "results":
-					if duplicate, err := profiles.AddFromDoc(doc); err == nil && !duplicate {
+					if duplicate, err := parseAndIndex(doc, index); err == nil && !duplicate {
 						nProfiles++
 						progress <- ProgressEvent{PROFILE_PARSED, 1}
 					} else if err != nil {
@@ -786,26 +545,6 @@ func parse(r io.Reader, progress chan ProgressEvent) (profiles ProfileStore, sco
 		}
 	case <-done:
 		log.Println("Workers have all finished")
-	}
-
-	cacheError := cache.Complete(maxThreshold)
-	existingClusters = Clusters{[]int{}, []int{}, 0}
-	STs := requestedSts
-	if cacheError != nil {
-		log.Println(cacheError)
-		scores = NewScores(STs)
-	} else {
-		var mapExistingToSts map[int]int
-		canReuseCache, STs, mapExistingToSts = sortSts(cache.Sts, requestedSts)
-		scores = NewScores(STs)
-
-		if canReuseCache {
-			existingClusters = Clusters{cache.Pi, cache.Lambda, len(cache.Pi)}
-		}
-		// We should add the edges from the edge doc
-		if err := scores.UpdateFromCache(cache, mapExistingToSts, maxThreshold); err != nil {
-			errChan <- err
-		}
 	}
 
 	return
