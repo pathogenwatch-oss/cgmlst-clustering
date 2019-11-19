@@ -288,8 +288,9 @@ func (c Cache) CountDistances(maxThreshold int) int {
 }
 
 type Profile struct {
-	ST      CgmlstSt
-	Matches M
+	ST         CgmlstSt
+	Matches    M
+	schemeSize int32
 }
 
 func parseRequestDoc(doc *bsonkit.Document) (request Request, err error) {
@@ -376,14 +377,14 @@ func parseMatches(matchesDoc *bsonkit.Document, p *Profile) error {
 
 func parseCgMlst(cgmlstDoc *bsonkit.Document, p *Profile) (err error) {
 	matches := new(bsonkit.Document)
+	var rawValue interface{}
 	for cgmlstDoc.Next() {
 		switch string(cgmlstDoc.Key()) {
 		case "st":
-			var _ST interface{}
-			if _ST, err = cgmlstDoc.RawValue(); err != nil {
+			if rawValue, err = cgmlstDoc.RawValue(); err != nil {
 				return errors.New("Bad value for st")
 			}
-			p.ST = _ST.(string)
+			p.ST = rawValue.(string)
 		case "matches":
 			if err = cgmlstDoc.Value(matches); err != nil {
 				return errors.New("Bad value for matches")
@@ -391,6 +392,11 @@ func parseCgMlst(cgmlstDoc *bsonkit.Document, p *Profile) (err error) {
 			if err = parseMatches(matches, p); err != nil {
 				return errors.New("Bad value for matches")
 			}
+		case "schemeSize":
+			if rawValue, err = cgmlstDoc.RawValue(); err != nil {
+				return errors.New("Bad value for schemeSize")
+			}
+			p.schemeSize = rawValue.(int32)
 		}
 		if err != nil {
 			return

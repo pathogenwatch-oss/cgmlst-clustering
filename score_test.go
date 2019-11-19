@@ -384,9 +384,9 @@ func TestComparer(t *testing.T) {
 		t.Fatalf("Expected 313 blocks, got %d\n", nBlocks)
 	}
 
-	comparer := Comparer{indexer.indices}
-	if value := comparer.compare(0, 1); value != 2 {
-		t.Fatalf("Expected 2, got %d\n", value)
+	comparer := Comparer{indexer.indices, 3}
+	if value := comparer.compare(0, 1); value != ALMOST_INF {
+		t.Fatalf("Expected %d, got %d\n", ALMOST_INF, value)
 	}
 	if value := comparer.compare(0, 2); value != 1 {
 		t.Fatalf("Expected 1, got %d\n", value)
