@@ -56,6 +56,7 @@ type Indexer struct {
 	alleleTokens *Tokeniser
 	indices      []Index
 	lookup       map[CgmlstSt]int
+	schemeSize   int32
 }
 
 func NewIndexer(STs []CgmlstSt) (i *Indexer) {
@@ -69,6 +70,7 @@ func NewIndexer(STs []CgmlstSt) (i *Indexer) {
 		alleleTokens: NewTokeniser(),
 		indices:      make([]Index, nSts),
 		lookup:       lookup,
+		schemeSize:   ALMOST_INF,
 	}
 }
 
@@ -110,6 +112,9 @@ func (i *Indexer) Index(profile *Profile) (bool, error) {
 		index.Genes.SetBit(bit)
 	}
 	index.Ready = true
+	if profile.schemeSize < i.schemeSize {
+		i.schemeSize = profile.schemeSize
+	}
 	return false, nil
 }
 

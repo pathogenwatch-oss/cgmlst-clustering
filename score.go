@@ -9,13 +9,17 @@ import (
 )
 
 type Comparer struct {
-	indices []Index
+	indices          []Index
+	minMatchingGenes int
 }
 
 func (c *Comparer) compare(stA int, stB int) int {
 	indexA := c.indices[stA]
 	indexB := c.indices[stB]
 	geneCount := CompareBits(indexA.Genes, indexB.Genes)
+	if geneCount < c.minMatchingGenes {
+		return ALMOST_INF
+	}
 	alleleCount := CompareBits(indexA.Alleles, indexB.Alleles)
 	return geneCount - alleleCount
 }
@@ -277,9 +281,10 @@ func (s *scoresStore) Complete(indexer *Indexer, progress chan ProgressEvent) (d
 		close(_scoreTasks)
 	}()
 
+	minMatchingGenes := int(indexer.schemeSize * 8 / 10)
 	for i := 1; i <= numWorkers; i++ {
 		scoreWg.Add(1)
-		go scoreProfiles(i, scoreTasks, s, Comparer{indexer.indices}, &scoreWg)
+		go scoreProfiles(i, scoreTasks, s, Comparer{indexer.indices, minMatchingGenes}, &scoreWg)
 	}
 
 	go func() {
