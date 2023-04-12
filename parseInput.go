@@ -20,6 +20,8 @@ type Request struct {
 	Threshold int
 }
 
+var wg sync.WaitGroup
+
 type Cache struct {
 	sync.RWMutex
 	Pi        []int
@@ -41,7 +43,16 @@ type Profile struct {
 	schemeSize int32
 }
 
+func indexProfile(profile *Profile, index *Indexer, progress chan ProgressEvent) {
+	defer wg.Done()
+	duplicate, profileErr := index.Index(profile)
+	if profileErr == nil && !duplicate {
+		progress <- ProgressEvent{PROFILE_PARSED, 1}
+	}
+}
+
 func parse(r io.Reader, progress chan ProgressEvent) (request Request, cache Cache, index *Indexer, err error) {
+	err = nil
 	decoder := json.NewDecoder(r)
 	if requestErr := decoder.Decode(&request); requestErr != nil {
 		err = requestErr
@@ -66,10 +77,13 @@ func parse(r io.Reader, progress chan ProgressEvent) (request Request, cache Cac
 			err = profileErr
 			return
 		}
+		wg.Add(1)
+		go indexProfile(&profile, index, progress)
 		duplicate, profileErr := index.Index(&profile)
 		if profileErr == nil && !duplicate {
 			progress <- ProgressEvent{PROFILE_PARSED, 1}
 		}
 	}
+	wg.Wait()
 	return
 }
