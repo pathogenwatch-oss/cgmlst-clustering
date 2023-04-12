@@ -44,10 +44,10 @@ func scoreProfiles(workerID int, jobs chan int, scores *scoresStore, comparer Co
 	}
 }
 
-type scoresResult struct {
-	STs    []CgmlstSt
-	Scores []int
-}
+//type scoresResult struct {
+//	STs    []CgmlstSt
+//	Scores []int
+//}
 
 type scoreDetails struct {
 	stA, stB      int
@@ -66,8 +66,10 @@ func (s *scoresStore) Done() int {
 }
 
 func sortSts(request Request, cache *Cache, index *Indexer) (canReuseCache bool, STs []CgmlstSt, cacheToScoresMap []int) {
-	cacheError := cache.Complete(request.Threshold)
-	if len(cache.Sts) == 0 || cacheError != nil {
+	// TODO: review this bit.
+	//cacheError := cache.Complete(request.Threshold)
+	if len(cache.Sts) == 0 {
+		//if len(cache.Sts) == 0 || cacheError != nil {
 		canReuseCache = false
 	} else {
 		canReuseCache = true
