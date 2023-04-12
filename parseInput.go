@@ -68,7 +68,6 @@ func parse(r io.Reader, progress chan ProgressEvent) (request Request, cache Cac
 		}
 		duplicate, profileErr := index.Index(&profile)
 		if profileErr == nil && !duplicate {
-			//nProfiles++
 			progress <- ProgressEvent{PROFILE_PARSED, 1}
 		}
 	}
