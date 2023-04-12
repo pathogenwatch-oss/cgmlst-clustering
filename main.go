@@ -2,8 +2,8 @@ package main
 
 import (
 	"bufio"
-	"encoding/json"
 	"flag"
+	"github.com/goccy/go-json"
 	"io"
 	"log"
 	"os"
@@ -12,10 +12,6 @@ import (
 )
 
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
-
-//func isSmaller(a, b bsonkit.ObjectID) bool {
-//	return bytes.Compare(a[:], b[:]) < 0
-//}
 
 func main() {
 	flag.Parse()
