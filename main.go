@@ -27,13 +27,12 @@ func main() {
 		defer pprof.StopCPUProfile()
 	}
 	//var stdinScanner = bufio.NewScanner(os.Stdin)
-	file, err := os.Open("testdata/small_test.json")
-	if err != nil {
-		panic(err)
-	}
-	//var stdinScanner = bufio.NewScanner(file)
+	//file, err := os.Open("testdata/small_test.json")
+	//if err != nil {
+	//	panic(err)
+	//}
 
-	var stdinReader = bufio.NewReaderSize(file, 100000000)
+	var stdinReader = bufio.NewReaderSize(os.Stdin, 100000000)
 	_main(stdinReader, os.Stdout)
 }
 

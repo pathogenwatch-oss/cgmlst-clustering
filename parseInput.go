@@ -79,10 +79,6 @@ func parse(r io.Reader, progress chan ProgressEvent) (request Request, cache Cac
 		}
 		wg.Add(1)
 		go indexProfile(&profile, index, progress)
-		duplicate, profileErr := index.Index(&profile)
-		if profileErr == nil && !duplicate {
-			progress <- ProgressEvent{PROFILE_PARSED, 1}
-		}
 	}
 	wg.Wait()
 	return

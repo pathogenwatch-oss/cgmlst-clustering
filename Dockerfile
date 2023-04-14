@@ -4,12 +4,9 @@ ARG git_credentials
 
 COPY bin/go-get.sh /tmp/
 
-COPY *.mod /tmp/clustering/
+COPY go.mod /tmp/clustering/
 
-RUN cd /tmp/clustering \
-  && apk add --update -t git-deps git bash \
-  && /tmp/go-get.sh $git_credentials \
-  && apk del --purge git-deps
+COPY go.sum /tmp/clustering/
 
 COPY *.go /tmp/clustering/
 
