@@ -13,15 +13,15 @@ type Index struct {
 }
 
 type AlleleKey struct {
-	Gene   string
 	Allele interface{}
+	Gene   int
 }
 
 type Tokeniser struct {
-	sync.Mutex
 	lookup    map[AlleleKey]uint64
 	nextValue chan uint64
 	lastValue uint64
+	sync.Mutex
 }
 
 func NewTokeniser() *Tokeniser {
@@ -50,13 +50,17 @@ func (t *Tokeniser) Get(key AlleleKey) uint64 {
 	return value
 }
 
+type IndexMap struct {
+	lookup     map[CgmlstSt]int
+	indices    []Index
+	schemeSize int32
+}
+
 type Indexer struct {
-	sync.Mutex
 	geneTokens   *Tokeniser
 	alleleTokens *Tokeniser
-	indices      []Index
-	lookup       map[CgmlstSt]int
-	schemeSize   int32
+	index        *IndexMap
+	sync.Mutex
 }
 
 func NewIndexer(STs []CgmlstSt) (i *Indexer) {
@@ -68,9 +72,11 @@ func NewIndexer(STs []CgmlstSt) (i *Indexer) {
 	return &Indexer{
 		geneTokens:   NewTokeniser(),
 		alleleTokens: NewTokeniser(),
-		indices:      make([]Index, nSts),
-		lookup:       lookup,
-		schemeSize:   ALMOST_INF,
+		index: &IndexMap{
+			indices:    make([]Index, nSts),
+			lookup:     lookup,
+			schemeSize: ALMOST_INF,
+		},
 	}
 }
 
@@ -84,10 +90,10 @@ func (i *Indexer) Index(profile *Profile) (bool, error) {
 
 	defer i.Unlock()
 	i.Lock()
-	if offset, ok = i.lookup[profile.ST]; !ok {
+	if offset, ok = i.index.lookup[profile.ST]; !ok {
 		return false, errors.New("Missing ST during indexing")
 	}
-	index = &i.indices[offset]
+	index = &i.index.indices[offset]
 	if index.Ready {
 		return true, nil
 	}
@@ -101,24 +107,24 @@ func (i *Indexer) Index(profile *Profile) (bool, error) {
 	var bit uint64
 	for gene, allele := range profile.Matches {
 		bit = i.alleleTokens.Get(AlleleKey{
-			gene,
 			allele,
+			gene,
 		})
 		index.Alleles.SetBit(bit)
 		bit := i.geneTokens.Get(AlleleKey{
-			gene,
 			nil,
+			gene,
 		})
 		index.Genes.SetBit(bit)
 	}
 	index.Ready = true
-	if profile.schemeSize < i.schemeSize {
-		i.schemeSize = profile.schemeSize
+	if profile.schemeSize < i.index.schemeSize {
+		i.index.schemeSize = profile.schemeSize
 	}
 	return false, nil
 }
 
-func (i *Indexer) Complete() error {
+func (i *IndexMap) Complete() error {
 	for st, idx := range i.lookup {
 		if !i.indices[idx].Ready {
 			return fmt.Errorf("Didn't see a profile for ST '%s'", st)

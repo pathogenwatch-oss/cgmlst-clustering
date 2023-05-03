@@ -37,8 +37,8 @@ type ProgressEvent struct {
 }
 
 type ProgressMessage struct {
-	Progress float32 `json:"progress"`
 	Message  string  `json:"message"`
+	Progress float32 `json:"progress"`
 }
 
 type ProgressWorker struct {
@@ -106,7 +106,7 @@ func (w *ProgressWorker) Update(msg ProgressEvent) {
 
 func (w *ProgressWorker) Progress() ProgressMessage {
 	if w.totalWork == 0 {
-		return ProgressMessage{0, "Initialising"}
+		return ProgressMessage{"Initialising", 0}
 	}
 	progress := 100.0 * (float32(w.workDone) / float32(w.totalWork))
 	if progress > 99.999 {
@@ -131,7 +131,7 @@ func (w *ProgressWorker) Progress() ProgressMessage {
 	case DONE:
 		message = "Clustering complete"
 	}
-	return ProgressMessage{progress, message}
+	return ProgressMessage{message, progress}
 }
 
 func NewProgressWorker() (chan ProgressEvent, chan ProgressMessage) {

@@ -65,8 +65,7 @@ func (s *scoresStore) Done() int {
 	return len(s.scores) - int(s.Todo())
 }
 
-func sortSts(request Request, cache *Cache, index *Indexer) (canReuseCache bool, STs []CgmlstSt, cacheToScoresMap []int) {
-	// TODO: review this bit.
+func sortSts(request Request, cache *Cache, index *IndexMap) (canReuseCache bool, STs []CgmlstSt, cacheToScoresMap []int) {
 	//cacheError := cache.Complete(request.Threshold)
 	if len(cache.Sts) == 0 {
 		//if len(cache.Sts) == 0 || cacheError != nil {
@@ -110,7 +109,7 @@ func sortSts(request Request, cache *Cache, index *Indexer) (canReuseCache bool,
 	return
 }
 
-func NewScores(request Request, cache *Cache, index *Indexer) (s scoresStore, err error) {
+func NewScores(request Request, cache *Cache, index *IndexMap) (s scoresStore, err error) {
 	var cacheToScoresMap []int
 	s.canReuseCache, s.STs, cacheToScoresMap = sortSts(request, cache, index)
 	nSTs := len(s.STs)
@@ -125,7 +124,7 @@ func NewScores(request Request, cache *Cache, index *Indexer) (s scoresStore, er
 	)
 	for scoresIdx, st := range s.STs {
 		if stA, found = index.lookup[st]; !found {
-			err = fmt.Errorf("Could not find ST '%s' in index", st)
+			err = fmt.Errorf("could not find ST '%s' in index", st)
 			return
 		}
 		scoresToIndexMap[scoresIdx] = stA
@@ -183,7 +182,7 @@ func (s scoresStore) Distances() ([]int, error) {
 	for i := 0; i < len(distances); i++ {
 		score := s.scores[i]
 		if score.status == PENDING {
-			return distances, errors.New("Haven't found scores for all pairs of STs")
+			return distances, errors.New("haven't found scores for all pairs of STs")
 		}
 		distances[i] = score.value
 	}
@@ -219,7 +218,7 @@ func (s *scoresStore) UpdateFromCache(request Request, c *Cache, cacheToScoresMa
 					// TODO: we can make this a little faster using s.SetIdx
 					// and we know that the cached scores are always
 					// in a continuous block at the beginning of the
-					// ouput.
+					// output.
 					s.Set(aInScores, bInScores, ALMOST_INF, FROM_CACHE)
 				}
 			}
@@ -257,7 +256,7 @@ func (s *scoresStore) UpdateFromCache(request Request, c *Cache, cacheToScoresMa
 	return
 }
 
-func (s *scoresStore) Complete(indexer *Indexer, progress chan ProgressEvent) (done chan bool, err chan error) {
+func (s *scoresStore) Complete(indexer *IndexMap, progress chan ProgressEvent) (done chan bool, err chan error) {
 	numWorkers := 10
 	var scoreWg sync.WaitGroup
 

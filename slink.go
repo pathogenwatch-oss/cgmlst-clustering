@@ -16,11 +16,11 @@ type Clusters struct {
 }
 
 type ClusterOutput struct {
+	Edges     map[int][][2]int `json:"edges"`
 	Pi        []int            `json:"pi"`
 	Lambda    []int            `json:"lambda"`
 	Sts       []string         `json:"STs"`
 	Threshold int              `json:"threshold"`
-	Edges     map[int][][2]int `json:"edges"`
 }
 
 func ClusterFromScratch(distances []int, nItems int) (c Clusters, err error) {
@@ -121,9 +121,9 @@ func (c Clusters) Format(threshold int, distances []int, sts []CgmlstSt) (output
 				}
 			}
 			edges[t] = atThreshold
-			output <- ClusterOutput{[]int{}, []int{}, []CgmlstSt{}, threshold, edges}
+			output <- ClusterOutput{edges, []int{}, []int{}, []CgmlstSt{}, threshold}
 		}
-		output <- ClusterOutput{c.pi, c.lambda, sts, threshold, map[int][][2]int{}}
+		output <- ClusterOutput{map[int][][2]int{}, c.pi, c.lambda, sts, threshold}
 	}()
 
 	return output

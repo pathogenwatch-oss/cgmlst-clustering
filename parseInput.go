@@ -13,7 +13,6 @@ const (
 )
 
 type CgmlstSt = string
-type M = map[string]interface{}
 
 type Request struct {
 	STs       []CgmlstSt
@@ -23,13 +22,13 @@ type Request struct {
 var wg sync.WaitGroup
 
 type Cache struct {
-	sync.RWMutex
+	Edges     map[int][][2]int
 	Pi        []int
 	Lambda    []int
 	Sts       []string
 	Threshold int
-	Edges     map[int][][2]int
 	nEdges    int
+	sync.RWMutex
 }
 
 func NewCache() *Cache {
@@ -39,7 +38,7 @@ func NewCache() *Cache {
 
 type Profile struct {
 	ST         CgmlstSt
-	Matches    M
+	Matches    []string
 	schemeSize int32
 }
 
@@ -51,7 +50,7 @@ func indexProfile(profile *Profile, index *Indexer, progress chan ProgressEvent)
 	}
 }
 
-func parse(r io.Reader, progress chan ProgressEvent) (request Request, cache Cache, index *Indexer, err error) {
+func parse(r io.Reader, progress chan ProgressEvent) (request Request, cache Cache, index *IndexMap, err error) {
 	err = nil
 	decoder := json.NewDecoder(r)
 	if requestErr := decoder.Decode(&request); requestErr != nil {
@@ -66,7 +65,7 @@ func parse(r io.Reader, progress chan ProgressEvent) (request Request, cache Cac
 		return
 	}
 
-	index = NewIndexer(request.STs)
+	var indexer = NewIndexer(request.STs)
 
 	for {
 		var profile Profile
@@ -78,8 +77,10 @@ func parse(r io.Reader, progress chan ProgressEvent) (request Request, cache Cac
 			return
 		}
 		wg.Add(1)
-		go indexProfile(&profile, index, progress)
+		go indexProfile(&profile, indexer, progress)
 	}
 	wg.Wait()
+	index = indexer.index
+
 	return
 }
