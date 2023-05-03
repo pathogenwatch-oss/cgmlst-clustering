@@ -10,4 +10,4 @@ else
   echo No git credentials provided.
 fi
 
-go get gitlab.com/cgps/bsonkit
+GOPRIVATE=gitlab.com/cgps/bsonkit go get gitlab.com/cgps/bsonkit

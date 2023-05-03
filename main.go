@@ -1,23 +1,17 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
+	"bufio"
 	"flag"
+	"github.com/goccy/go-json"
 	"io"
 	"log"
 	"os"
 	"runtime/pprof"
 	"time"
-
-	"gitlab.com/cgps/bsonkit"
 )
 
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
-
-func isSmaller(a, b bsonkit.ObjectID) bool {
-	return bytes.Compare(a[:], b[:]) < 0
-}
 
 func main() {
 	flag.Parse()
@@ -26,10 +20,20 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		pprof.StartCPUProfile(f)
+		err = pprof.StartCPUProfile(f)
+		if err != nil {
+			log.Fatal(err)
+		}
 		defer pprof.StopCPUProfile()
 	}
-	_main(os.Stdin, os.Stdout)
+	//var stdinScanner = bufio.NewScanner(os.Stdin)
+	//file, err := os.Open("testdata/small_test.json")
+	//if err != nil {
+	//	panic(err)
+	//}
+
+	var stdinReader = bufio.NewReaderSize(os.Stdin, 100000000)
+	_main(stdinReader, os.Stdout)
 }
 
 func _main(r io.Reader, w io.Writer) ([]CgmlstSt, Clusters, []int) {
@@ -43,10 +47,16 @@ func _main(r io.Reader, w io.Writer) ([]CgmlstSt, Clusters, []int) {
 		for {
 			select {
 			case progress := <-progressOut:
-				enc.Encode(progress)
+				err := enc.Encode(progress)
+				if err != nil {
+					return
+				}
 			case result, more := <-results:
 				if more {
-					enc.Encode(result)
+					err := enc.Encode(result)
+					if err != nil {
+						return
+					}
 				} else {
 					done <- true
 				}
@@ -60,7 +70,7 @@ func _main(r io.Reader, w io.Writer) ([]CgmlstSt, Clusters, []int) {
 	}
 
 	var scores scoresStore
-	if scores, err = NewScores(request, cache, index); err != nil {
+	if scores, err = NewScores(request, &cache, index); err != nil {
 		panic(err)
 	}
 
@@ -95,7 +105,7 @@ func _main(r io.Reader, w io.Writer) ([]CgmlstSt, Clusters, []int) {
 
 	var clusters Clusters
 	if scores.canReuseCache {
-		clusters, err = ClusterFromCache(distances, nItems, cache)
+		clusters, err = ClusterFromCache(distances, nItems, &cache)
 		if err != nil {
 			panic(err)
 		}
