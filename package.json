@@ -1,6 +1,6 @@
 {
   "name": "cgps-cgmlst-clustering",
-  "version": "2.5.4",
+  "version": "2.5.4-0",
   "description": "",
   "main": "index.js",
   "scripts": {
