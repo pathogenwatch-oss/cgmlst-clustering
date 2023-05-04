@@ -97,7 +97,6 @@ func (i *Indexer) Index(profile *Profile) (bool, error) {
 	if index.Ready {
 		return true, nil
 	}
-
 	index.Genes = NewBitArray(2500)
 	if i.alleleTokens.lastValue < 2500 {
 		index.Alleles = NewBitArray(2500)
@@ -106,6 +105,9 @@ func (i *Indexer) Index(profile *Profile) (bool, error) {
 	}
 	var bit uint64
 	for gene, allele := range profile.Matches {
+		if allele == "" {
+			continue
+		}
 		bit = i.alleleTokens.Get(AlleleKey{
 			allele,
 			gene,
