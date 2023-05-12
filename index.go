@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"sync"
 )
 
 type Index struct {
@@ -21,7 +20,6 @@ type Tokeniser struct {
 	lookup    map[AlleleKey]uint64
 	nextValue chan uint64
 	lastValue uint64
-	sync.Mutex
 }
 
 func NewTokeniser() *Tokeniser {
@@ -39,8 +37,6 @@ func NewTokeniser() *Tokeniser {
 }
 
 func (t *Tokeniser) Get(key AlleleKey) uint64 {
-	t.Lock()
-	defer t.Unlock()
 	if value, ok := t.lookup[key]; ok {
 		return value
 	}
@@ -60,7 +56,6 @@ type Indexer struct {
 	geneTokens   *Tokeniser
 	alleleTokens *Tokeniser
 	index        *IndexMap
-	sync.Mutex
 }
 
 func NewIndexer(STs []CgmlstSt) (i *Indexer) {
@@ -88,8 +83,6 @@ func (i *Indexer) Index(profile *Profile) (bool, error) {
 		index  *Index
 	)
 
-	defer i.Unlock()
-	i.Lock()
 	if offset, ok = i.index.lookup[profile.ST]; !ok {
 		return false, errors.New("Missing ST during indexing")
 	}

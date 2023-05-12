@@ -2,8 +2,8 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"flag"
-	"github.com/goccy/go-json"
 	"io"
 	"log"
 	"os"
@@ -32,7 +32,7 @@ func main() {
 	//	panic(err)
 	//}
 
-	var stdinReader = bufio.NewReaderSize(os.Stdin, 100000000)
+	var stdinReader = bufio.NewReaderSize(os.Stdin, 16000000)
 	_main(stdinReader, os.Stdout)
 }
 

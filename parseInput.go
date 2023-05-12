@@ -19,8 +19,6 @@ type Request struct {
 	Threshold int
 }
 
-var wg sync.WaitGroup
-
 type Cache struct {
 	Edges     map[int][][2]int
 	Pi        []int
@@ -43,7 +41,6 @@ type Profile struct {
 }
 
 func indexProfile(profile *Profile, index *Indexer, progress chan ProgressEvent) {
-	defer wg.Done()
 	duplicate, profileErr := index.Index(profile)
 	if profileErr == nil && !duplicate {
 		progress <- ProgressEvent{PROFILE_PARSED, 1}
@@ -76,10 +73,8 @@ func parse(r io.Reader, progress chan ProgressEvent) (request Request, cache Cac
 			err = profileErr
 			return
 		}
-		wg.Add(1)
-		go indexProfile(&profile, indexer, progress)
+		indexProfile(&profile, indexer, progress)
 	}
-	wg.Wait()
 	index = indexer.index
 
 	return
