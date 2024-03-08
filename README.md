@@ -47,8 +47,7 @@ they correspond to.  They also include the distances between STs below a specifi
 These are stored as a map of the distance and the pair of the edges which are that distance from
 one another.  These are encoded as the index of the ST into the STs array.  Other data structures
 might be simpler but this is probably one of the more scalable as the datasets get really big 
-(i.e. 100k+ genomes) and it makes it easier to split the cache across multiple records in the
-database (which can only hold documents of up to 16MB).
+(i.e. 100k+ genomes).
 
 The index is an efficient storage structure which holds the cgMLST records as bitarrays.  These
 can then be compared really quickly.

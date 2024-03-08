@@ -44,11 +44,6 @@ func scoreProfiles(workerID int, jobs chan int, scores *scoresStore, comparer Co
 	}
 }
 
-//type scoresResult struct {
-//	STs    []CgmlstSt
-//	Scores []int
-//}
-
 type scoreDetails struct {
 	stA, stB      int
 	value, status int
