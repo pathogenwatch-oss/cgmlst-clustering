@@ -37,7 +37,7 @@ func NewCache() *Cache {
 type Profile struct {
 	ST         CgmlstSt
 	Matches    []string
-	schemeSize int32
+	schemeSize uint32
 }
 
 func indexProfile(profile *Profile, index *Indexer, progress chan ProgressEvent) {

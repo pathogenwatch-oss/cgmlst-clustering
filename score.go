@@ -20,7 +20,7 @@ func (c *Comparer) compare(stA int, stB int) int {
 	if geneCount < c.minMatchingGenes {
 		return ALMOST_INF
 	}
-	alleleCount := CompareBits(indexA.Alleles, indexB.Alleles)
+	alleleCount := int(indexA.Alleles.AndCardinality(indexB.Alleles))
 	return geneCount - alleleCount
 }
 

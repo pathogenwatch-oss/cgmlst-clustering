@@ -1,79 +1,184 @@
 package main
 
-//func TestSortSts(t *testing.T) {
-//	request := Request{
-//		STs:       []CgmlstSt{"a", "b", "c"},
-//		Threshold: 1,
-//	}
-//	cache := Cache{
-//		Sts:       []CgmlstSt{},
-//		Edges:     map[int][][2]int{0: [][2]int{}, 1: [][2]int{}},
-//		Threshold: 1,
-//		nEdges:    2,
-//	}
-//	index := Indexer{
-//		lookup:  map[string]int{"a": 0, "b": 1, "c": 2},
-//		indices: []Index{Index{Ready: true}, Index{Ready: true}, Index{Ready: true}},
-//	}
-//	canReuseCache, STs, cacheToScoresMap := sortSts(request, &cache, &index)
-//
-//	expected := []CgmlstSt{"a", "b", "c"}
-//	if !reflect.DeepEqual(STs, expected) {
-//		t.Fatalf("Expected %v, got %v\n", expected, STs)
-//	}
-//	if canReuseCache {
-//		t.Fatal("Wrong")
-//	}
-//	if len(cacheToScoresMap) != 0 {
-//		t.Fatal("Wrong")
-//	}
-//
-//	cache.Sts = []CgmlstSt{"b", "a"}
-//	cache.Pi = []int{0, 0}
-//	cache.Lambda = []int{0, 0}
-//	canReuseCache, STs, cacheToScoresMap = sortSts(request, &cache, &index)
-//	expected = []CgmlstSt{"b", "a", "c"}
-//	if !reflect.DeepEqual(STs, expected) {
-//		t.Fatalf("Expected %v, got %v\n", expected, STs)
-//	}
-//	if !canReuseCache {
-//		t.Fatal("Wrong")
-//	}
-//	if !reflect.DeepEqual(cacheToScoresMap, []int{0, 1}) {
-//		t.Fatalf("Didn't expect %v\n", cacheToScoresMap)
-//	}
-//
-//	cache.Sts = []CgmlstSt{"b", "d", "a"}
-//	cache.Pi = []int{0, 0, 0}
-//	cache.Lambda = []int{0, 0, 0}
-//	canReuseCache, STs, cacheToScoresMap = sortSts(request, &cache, &index)
-//	expected = []CgmlstSt{"b", "a", "c"}
-//	if !reflect.DeepEqual(STs, expected) {
-//		t.Fatalf("Expected %v, got %v\n", expected, STs)
-//	}
-//	if canReuseCache {
-//		t.Fatal("Wrong")
-//	}
-//	if !reflect.DeepEqual(cacheToScoresMap, []int{0, -1, 1}) {
-//		t.Fatalf("Didn't expect %v\n", cacheToScoresMap)
-//	}
-//
-//	cache.Sts = []CgmlstSt{"b", "a", "b"}
-//	cache.Pi = []int{0, 0, 0}
-//	cache.Lambda = []int{0, 0, 0}
-//	request.STs = []CgmlstSt{"c", "a", "b", "c"}
-//	canReuseCache, STs, cacheToScoresMap = sortSts(request, &cache, &index)
-//	expected = []CgmlstSt{"b", "a", "c"}
-//	if !reflect.DeepEqual(STs, expected) {
-//		t.Fatalf("Expected %v, got %v\n", expected, STs)
-//	}
-//	if canReuseCache {
-//		t.Fatal("Wrong")
-//	}
-//	if !reflect.DeepEqual(cacheToScoresMap, []int{0, 1, 0}) {
-//		t.Fatalf("Didn't expect %v\n", cacheToScoresMap)
-//	}
-//}
+import (
+	"github.com/RoaringBitmap/gocroaring"
+	"reflect"
+	"testing"
+)
+
+func TestComparer_compare(t *testing.T) {
+
+	indices := make([]Index, 4)
+	allPresent := NewBitArray(10)
+	for i := 0; i < 10; i++ {
+		allPresent.SetBit(uint64(i))
+	}
+	oneGap := NewBitArray(10)
+	for i := 0; i < 10; i++ {
+		if i == 5 {
+			continue
+		}
+		oneGap.SetBit(uint64(i))
+	}
+	indices[0] = Index{
+		Genes:   allPresent,
+		Alleles: gocroaring.New(0, 1, 2, 3, 4, 5, 6, 7, 8, 9),
+		Ready:   true,
+	}
+	indices[1] = Index{
+		Genes:   allPresent,
+		Alleles: gocroaring.New(0, 2, 3, 4, 5, 6, 7, 8, 9, 10),
+		Ready:   true,
+	}
+	indices[2] = Index{
+		Genes:   oneGap,
+		Alleles: gocroaring.New(0, 1, 2, 3, 4, 6, 7, 8, 9),
+		Ready:   true,
+	}
+	indices[3] = Index{
+		Genes:   oneGap,
+		Alleles: gocroaring.New(0, 2, 3, 4, 7, 8, 9, 10, 11),
+		Ready:   false,
+	}
+	c := &Comparer{
+		indices:          indices,
+		minMatchingGenes: 8,
+	}
+	type args struct {
+		stA int
+		stB int
+	}
+	tests := []struct {
+		name string
+		args args
+		want int
+	}{
+		{
+			name: "Identity",
+			args: args{
+				stA: 0,
+				stB: 0,
+			},
+			want: 0,
+		},
+		{
+			name: "1 difference",
+			args: args{
+				stA: 0,
+				stB: 1,
+			},
+			want: 1,
+		},
+		{
+			name: "1 gap",
+			args: args{
+				stA: 0,
+				stB: 2,
+			},
+			want: 0,
+		},
+		{
+			name: "2 differences 1 gap",
+			args: args{
+				stA: 0,
+				stB: 3,
+			},
+			want: 2,
+		},
+		{
+			name: "2 difference 2x1 gap",
+			args: args{
+				stA: 2,
+				stB: 3,
+			},
+			want: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := c.compare(tt.args.stA, tt.args.stB); got != tt.want {
+				t.Errorf("compare() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSortSts(t *testing.T) {
+	request := Request{
+		STs:       []CgmlstSt{"a", "b", "c"},
+		Threshold: 1,
+	}
+	cache := Cache{
+		Sts:       []CgmlstSt{},
+		Edges:     map[int][][2]int{0: {}, 1: {}},
+		Threshold: 1,
+		nEdges:    2,
+	}
+	index := IndexMap{
+		lookup:  map[string]int{"a": 0, "b": 1, "c": 2},
+		indices: []Index{{Ready: true}, {Ready: true}, {Ready: true}},
+	}
+	canReuseCache, STs, cacheToScoresMap := sortSts(request, &cache, &index)
+
+	expected := []CgmlstSt{"a", "b", "c"}
+	if !reflect.DeepEqual(STs, expected) {
+		t.Fatalf("Expected %v, got %v\n", expected, STs)
+	}
+	if canReuseCache {
+		t.Fatal("Wrong")
+	}
+	if len(cacheToScoresMap) != 0 {
+		t.Fatal("Wrong")
+	}
+
+	cache.Sts = []CgmlstSt{"b", "a"}
+	cache.Pi = []int{0, 0}
+	cache.Lambda = []int{0, 0}
+	canReuseCache, STs, cacheToScoresMap = sortSts(request, &cache, &index)
+	expected = []CgmlstSt{"b", "a", "c"}
+	if !reflect.DeepEqual(STs, expected) {
+		t.Fatalf("Expected %v, got %v\n", expected, STs)
+	}
+	if !canReuseCache {
+		t.Fatal("Wrong")
+	}
+	if !reflect.DeepEqual(cacheToScoresMap, []int{0, 1}) {
+		t.Fatalf("Didn't expect %v\n", cacheToScoresMap)
+	}
+
+	cache.Sts = []CgmlstSt{"b", "d", "a"}
+	cache.Pi = []int{0, 0, 0}
+	cache.Lambda = []int{0, 0, 0}
+	canReuseCache, STs, cacheToScoresMap = sortSts(request, &cache, &index)
+	expected = []CgmlstSt{"b", "a", "c"}
+	if !reflect.DeepEqual(STs, expected) {
+		t.Fatalf("Expected %v, got %v\n", expected, STs)
+	}
+	if canReuseCache {
+		t.Fatal("Wrong")
+	}
+	if !reflect.DeepEqual(cacheToScoresMap, []int{0, -1, 1}) {
+		t.Fatalf("Didn't expect %v\n", cacheToScoresMap)
+	}
+
+	cache.Sts = []CgmlstSt{"b", "a", "b"}
+	cache.Pi = []int{0, 0, 0}
+	cache.Lambda = []int{0, 0, 0}
+	request.STs = []CgmlstSt{"c", "a", "b", "c"}
+	canReuseCache, STs, cacheToScoresMap = sortSts(request, &cache, &index)
+	expected = []CgmlstSt{"b", "a", "c"}
+	if !reflect.DeepEqual(STs, expected) {
+		t.Fatalf("Expected %v, got %v\n", expected, STs)
+	}
+	if canReuseCache {
+		t.Fatal("Wrong")
+	}
+	if !reflect.DeepEqual(cacheToScoresMap, []int{0, 1, 0}) {
+		t.Fatalf("Didn't expect %v\n", cacheToScoresMap)
+	}
+}
+
 //
 ////func TestParseCacheScores(t *testing.T) {
 ////	testFile, err := os.Open("testdata/TestParseCache.bson")

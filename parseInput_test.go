@@ -1,5 +1,7 @@
 package main
 
+// This is all defunct because we changed to an off-the-shelf JSON parser.
+
 //func TestParseRequestDoc(t *testing.T) {
 //	testFile, err := os.Open("testdata/TestParseRequestDoc.bson")
 //	if err != nil {
