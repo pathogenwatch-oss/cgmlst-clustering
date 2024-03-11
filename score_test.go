@@ -41,7 +41,7 @@ func TestComparer_compare(t *testing.T) {
 		Ready:   false,
 	}
 	c := &Comparer{
-		indices:          indices,
+		profiles:         indices,
 		minMatchingGenes: 8,
 	}
 	type args struct {
@@ -203,7 +203,7 @@ func TestSortSts(t *testing.T) {
 ////	}
 ////	index := Indexer{
 ////		lookup:  map[string]int{"a": 0, "b": 1, "d": 2, "e": 3},
-////		indices: []Index{Index{Ready: true}, Index{Ready: true}, Index{Ready: true}, Index{Ready: true}},
+////		profiles: []Index{Index{Ready: true}, Index{Ready: true}, Index{Ready: true}, Index{Ready: true}},
 ////	}
 ////
 ////	scores, err := NewScores(request, cache, &index)
@@ -235,13 +235,13 @@ func TestSortSts(t *testing.T) {
 //	}
 //	index := Indexer{
 //		lookup:  make(map[CgmlstSt]int),
-//		indices: make([]Index, 1000),
+//		profiles: make([]Index, 1000),
 //	}
 //	for i := 0; i < 1000; i++ {
 //		st := fmt.Sprintf("st%d", i)
 //		request.STs[i] = st
 //		index.lookup[st] = i
-//		index.indices[i].Ready = true
+//		index.profiles[i].Ready = true
 //	}
 //
 //	b.ResetTimer()
@@ -266,14 +266,14 @@ func TestSortSts(t *testing.T) {
 //		Sts: []CgmlstSt{},
 //	}
 //	index := Indexer{
-//		indices: make([]Index, 1000),
+//		profiles: make([]Index, 1000),
 //		lookup:  make(map[CgmlstSt]int),
 //	}
 //	for i := 0; i < 1000; i++ {
 //		st := fmt.Sprintf("st%d", i)
 //		request.STs[i] = st
 //		index.lookup[st] = i
-//		index.indices[i].Ready = true
+//		index.profiles[i].Ready = true
 //	}
 //
 //	scores, err := NewScores(request, &cache, &index)
@@ -306,12 +306,12 @@ func TestSortSts(t *testing.T) {
 //		Sts: []CgmlstSt{},
 //	}
 //	index := Indexer{
-//		indices: make([]Index, len(request.STs)),
+//		profiles: make([]Index, len(request.STs)),
 //		lookup:  make(map[CgmlstSt]int),
 //	}
 //	for i, st := range request.STs {
 //		index.lookup[st] = i
-//		index.indices[i].Ready = true
+//		index.profiles[i].Ready = true
 //	}
 //
 //	scores, err := NewScores(request, &cache, &index)
@@ -348,12 +348,12 @@ func TestSortSts(t *testing.T) {
 //		Sts: []CgmlstSt{},
 //	}
 //	index := Indexer{
-//		indices: make([]Index, len(request.STs)),
+//		profiles: make([]Index, len(request.STs)),
 //		lookup:  make(map[CgmlstSt]int),
 //	}
 //	for i, st := range request.STs {
 //		index.lookup[st] = i
-//		index.indices[i].Ready = true
+//		index.profiles[i].Ready = true
 //	}
 //
 //	scores, err := NewScores(request, &cache, &index)
@@ -394,12 +394,12 @@ func TestSortSts(t *testing.T) {
 //		Sts: []CgmlstSt{},
 //	}
 //	index := Indexer{
-//		indices: make([]Index, len(request.STs)),
+//		profiles: make([]Index, len(request.STs)),
 //		lookup:  make(map[CgmlstSt]int),
 //	}
 //	for i, st := range request.STs {
 //		index.lookup[st] = i
-//		index.indices[i].Ready = true
+//		index.profiles[i].Ready = true
 //	}
 //
 //	scores, err := NewScores(request, &cache, &index)
@@ -472,14 +472,14 @@ func TestSortSts(t *testing.T) {
 //		}
 //	}
 //
-//	if nBlocks := len(indexer.indices[indexer.lookup["bcd234"]].Alleles.blocks); nBlocks != 157 {
+//	if nBlocks := len(indexer.profiles[indexer.lookup["bcd234"]].Alleles.blocks); nBlocks != 157 {
 //		t.Fatalf("Expected 157 blocks, got %d\n", nBlocks)
 //	}
-//	if nBlocks := len(indexer.indices[indexer.lookup["cde345"]].Alleles.blocks); nBlocks != 313 {
+//	if nBlocks := len(indexer.profiles[indexer.lookup["cde345"]].Alleles.blocks); nBlocks != 313 {
 //		t.Fatalf("Expected 313 blocks, got %d\n", nBlocks)
 //	}
 //
-//	comparer := Comparer{indexer.indices, 3}
+//	comparer := Comparer{indexer.profiles, 3}
 //	if value := comparer.compare(0, 1); value != ALMOST_INF {
 //		t.Fatalf("Expected %d, got %d\n", ALMOST_INF, value)
 //	}

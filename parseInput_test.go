@@ -135,7 +135,7 @@ package main
 //		t.Fatal(err)
 //	}
 //
-//	i := index.indices[index.lookup["abc"]]
+//	i := index.profiles[index.lookup["abc"]]
 //	if !i.Ready {
 //		t.Fatal("Profile not in index")
 //	}
@@ -162,7 +162,7 @@ package main
 //	if err = index.Complete(); err == nil {
 //		missing := make([]CgmlstSt, 0, len(request.STs))
 //		for st, idx := range index.lookup {
-//			if !index.indices[idx].Ready {
+//			if !index.profiles[idx].Ready {
 //				missing = append(missing, st)
 //			}
 //		}
@@ -185,7 +185,7 @@ package main
 //		t.Fatalf("Got %v\n", scores.STs)
 //	}
 //	nProfiles := 0
-//	for _, i := range index.indices {
+//	for _, i := range index.profiles {
 //		if i.Ready {
 //			nProfiles++
 //		}
@@ -235,7 +235,7 @@ package main
 //		t.Fatalf("Got %v\n", scores.STs)
 //	}
 //	nProfiles := 0
-//	for _, i := range index.indices {
+//	for _, i := range index.profiles {
 //		if i.Ready {
 //			nProfiles++
 //		}
@@ -346,7 +346,7 @@ package main
 //	}
 //
 //	nProfiles := 0
-//	for _, i := range index.indices {
+//	for _, i := range index.profiles {
 //		if i.Ready {
 //			nProfiles++
 //		}

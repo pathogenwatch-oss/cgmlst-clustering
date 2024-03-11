@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"log"
 	"sync"
@@ -9,22 +8,22 @@ import (
 )
 
 type Comparer struct {
-	indices          []Index
+	profiles         []Index
 	minMatchingGenes int
 }
 
 func (c *Comparer) compare(stA int, stB int) int {
-	indexA := c.indices[stA]
-	indexB := c.indices[stB]
-	geneCount := CompareBits(indexA.Genes, indexB.Genes)
+	profileA := c.profiles[stA]
+	profileB := c.profiles[stB]
+	geneCount := CompareBits(profileA.Genes, profileB.Genes)
 	if geneCount < c.minMatchingGenes {
 		return ALMOST_INF
 	}
-	alleleCount := int(indexA.Alleles.AndCardinality(indexB.Alleles))
+	alleleCount := int(profileA.Alleles.AndCardinality(profileB.Alleles))
 	return geneCount - alleleCount
 }
 
-func scoreProfiles(workerID int, jobs chan int, scores *scoresStore, comparer Comparer, wg *sync.WaitGroup) {
+func scoreProfiles(workerID int, jobs chan [3]int, scores *scoresStore, comparer Comparer, wg *sync.WaitGroup) {
 	nScores := 0
 	defer func() {
 		log.Printf("Worker %d has computed %d scores", workerID, nScores)
@@ -35,35 +34,39 @@ func scoreProfiles(workerID int, jobs chan int, scores *scoresStore, comparer Co
 		if !more {
 			return
 		}
-		score := &(scores.scores[j])
-		scores.SetIdx(j, comparer.compare(score.stA, score.stB), COMPLETE)
+		compare := comparer.compare(j[0], j[1])
+		err := scores.SetIdx(j[2], compare)
+		if err != nil {
+			panic(err)
+		}
 		nScores++
-		if nScores%100000 == 0 {
+		if nScores%1000000 == 0 {
 			log.Printf("Worker %d has computed %d scores", workerID, nScores)
 		}
 	}
 }
 
-type scoreDetails struct {
-	stA, stB      int
-	value, status int
-}
+//type scoreDetails struct {
+//	stA, stB      int
+//	value, status int
+//}
 
 type scoresStore struct {
 	STs           []CgmlstSt
-	scores        []scoreDetails
-	todo          int32
-	canReuseCache bool
+	scores        []int
+	statuses      []int32
+	todo          int32 // remaining scores to compute
+	canReuseCache bool  // can reuse the cached clustering
 }
 
 func (s *scoresStore) Done() int {
 	return len(s.scores) - int(s.Todo())
 }
 
+// Orders the STs by cache (retaining the order in the cache) first and then other STs in the request.
+// The location of the ST links to `cacheToScoresMap`.
 func sortSts(request Request, cache *Cache, index *IndexMap) (canReuseCache bool, STs []CgmlstSt, cacheToScoresMap []int) {
-	//cacheError := cache.Complete(request.Threshold)
 	if len(cache.Sts) == 0 {
-		//if len(cache.Sts) == 0 || cacheError != nil {
 		canReuseCache = false
 	} else {
 		canReuseCache = true
@@ -108,13 +111,13 @@ func NewScores(request Request, cache *Cache, index *IndexMap) (s scoresStore, e
 	var cacheToScoresMap []int
 	s.canReuseCache, s.STs, cacheToScoresMap = sortSts(request, cache, index)
 	nSTs := len(s.STs)
-	s.scores = make([]scoreDetails, nSTs*(nSTs-1)/2)
+	s.scores = make([]int, nSTs*(nSTs-1)/2)
 
 	scoresToIndexMap := make([]int, nSTs)
 
 	var (
 		scoreDetailsIndex int
-		stA, stB          int
+		stA               int
 		found             bool
 	)
 	for scoresIdx, st := range s.STs {
@@ -123,8 +126,8 @@ func NewScores(request Request, cache *Cache, index *IndexMap) (s scoresStore, e
 			return
 		}
 		scoresToIndexMap[scoresIdx] = stA
-		for _, stB = range scoresToIndexMap[:scoresIdx] {
-			s.scores[scoreDetailsIndex] = scoreDetails{stA, stB, -1, PENDING}
+		for _, _ = range scoresToIndexMap[:scoresIdx] {
+			s.scores[scoreDetailsIndex] = -1
 			scoreDetailsIndex++
 		}
 	}
@@ -148,41 +151,34 @@ func (s scoresStore) getIndex(stA int, stB int) (int, error) {
 	return scoreIdx, nil
 }
 
-func (s *scoresStore) SetIdx(idx int, score int, status int) error {
-	s.scores[idx].value = score
-	s.scores[idx].status = status
+func (s *scoresStore) SetIdx(idx int, score int) error {
+	s.scores[idx] = score
 	atomic.AddInt32(&s.todo, -1)
 	return nil
 }
 
-func (s *scoresStore) Set(stA int, stB int, score int, status int) error {
+func (s *scoresStore) Set(stA int, stB int, score int) error {
 	idx, err := s.getIndex(stA, stB)
 	if err != nil {
 		return err
 	}
-	return s.SetIdx(idx, score, status)
+	return s.SetIdx(idx, score)
 }
 
-func (s scoresStore) Get(stA int, stB int) (scoreDetails, error) {
-	idx, err := s.getIndex(stA, stB)
-	if err != nil {
-		return scoreDetails{}, err
-	}
-	return s.scores[idx], nil
-}
+func (s scoresStore) Distances() (*[]int, error) {
+	return &s.scores, nil
 
-func (s scoresStore) Distances() ([]int, error) {
-	distances := make([]int, len(s.scores))
-
-	for i := 0; i < len(distances); i++ {
-		score := s.scores[i]
-		if score.status == PENDING {
-			return distances, errors.New("haven't found scores for all pairs of STs")
-		}
-		distances[i] = score.value
-	}
-
-	return distances, nil
+	//distances := make([]int, len(s.scores))
+	//
+	//for i := 0; i < len(distances); i++ {
+	//	score := s.scores[i]
+	//	if score.status == PENDING {
+	//		return distances, errors.New("haven't found scores for all pairs of STs")
+	//	}
+	//	distances[i] = score.value
+	//}
+	//
+	//return distances, nil
 }
 
 func (s scoresStore) Todo() int32 {
@@ -214,7 +210,7 @@ func (s *scoresStore) UpdateFromCache(request Request, c *Cache, cacheToScoresMa
 					// and we know that the cached scores are always
 					// in a continuous block at the beginning of the
 					// output.
-					s.Set(aInScores, bInScores, ALMOST_INF, FROM_CACHE)
+					s.Set(aInScores, bInScores, ALMOST_INF)
 				}
 			}
 		}
@@ -237,7 +233,7 @@ func (s *scoresStore) UpdateFromCache(request Request, c *Cache, cacheToScoresMa
 				continue
 			}
 
-			if err = s.Set(aInScores, bInScores, distance, FROM_CACHE); err != nil {
+			if err = s.Set(aInScores, bInScores, distance); err != nil {
 				return err
 			}
 		}
@@ -252,14 +248,14 @@ func (s *scoresStore) UpdateFromCache(request Request, c *Cache, cacheToScoresMa
 }
 
 func (s *scoresStore) Complete(indexer *IndexMap, progress chan ProgressEvent) (done chan bool, err chan error) {
-	numWorkers := 10
+	numWorkers := 1
 	var scoreWg sync.WaitGroup
 
 	err = make(chan error)
 	done = make(chan bool)
 
-	_scoreTasks := make(chan int, 50)
-	scoreTasks := make(chan int)
+	_scoreTasks := make(chan [3]int, 50)
+	scoreTasks := make(chan [3]int)
 	go func() {
 		for task := range _scoreTasks {
 			scoreTasks <- task
@@ -269,11 +265,20 @@ func (s *scoresStore) Complete(indexer *IndexMap, progress chan ProgressEvent) (
 	}()
 
 	go func() {
-		for idx, score := range s.scores {
-			if score.status == PENDING {
-				_scoreTasks <- idx
+		scoreIndex := 0
+		for i := 1; i < len(s.STs); i++ {
+			for j := 0; j < i; j++ {
+				if s.scores[scoreIndex] == -1 {
+					_scoreTasks <- [3]int{j, i, scoreIndex}
+				}
+				scoreIndex++
 			}
 		}
+		//for idx, score := range s.scores {
+		//	if score.status == PENDING {
+		//		_scoreTasks <- idx
+		//	}
+		//}
 		close(_scoreTasks)
 	}()
 

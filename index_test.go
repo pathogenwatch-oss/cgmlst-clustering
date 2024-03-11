@@ -11,7 +11,7 @@ package main
 //			"gene3": 1,
 //		},
 //	})
-//	index := indexer.indices[indexer.lookup["abc123"]]
+//	index := indexer.profiles[indexer.lookup["abc123"]]
 //	if value := index.Genes.blocks[0]; value != 7 {
 //		t.Fatalf("Got %d, expected 7\n", value)
 //	}
@@ -35,7 +35,7 @@ package main
 //	}))
 //	expectedValue := 7 - valueOfGene3 + valueOfGene4
 //
-//	index = indexer.indices[indexer.lookup["bcd234"]]
+//	index = indexer.profiles[indexer.lookup["bcd234"]]
 //	if value := index.Genes.blocks[0]; value != uint64(expectedValue) {
 //		t.Fatalf("Got %d, expected %d\n", value, expectedValue)
 //	}

@@ -13,6 +13,19 @@ import (
 
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 
+func ScannerToReader(scanner *bufio.Scanner) io.Reader {
+	reader, writer := io.Pipe()
+
+	go func() {
+		defer writer.Close()
+		for scanner.Scan() {
+			writer.Write(scanner.Bytes())
+		}
+	}()
+
+	return reader
+}
+
 func main() {
 	flag.Parse()
 	if *cpuprofile != "" {
@@ -26,8 +39,8 @@ func main() {
 		}
 		defer pprof.StopCPUProfile()
 	}
-	//var stdinScanner = bufio.NewScanner(os.Stdin)
-	//file, err := os.Open("testdata/small_test.json")
+	//file, err := os.Open("testdata/simple_test.json")
+	//var stdinScanner = bufio.NewScanner(file)
 	//if err != nil {
 	//	panic(err)
 	//}
@@ -97,7 +110,7 @@ func _main(r io.Reader, w io.Writer) ([]CgmlstSt, Clusters, []int) {
 
 	progressIn <- ProgressEvent{CLUSTERING_STARTED, 0}
 
-	var distances []int
+	var distances *[]int
 	if distances, err = scores.Distances(); err != nil {
 		panic(err)
 	}
@@ -105,24 +118,24 @@ func _main(r io.Reader, w io.Writer) ([]CgmlstSt, Clusters, []int) {
 
 	var clusters Clusters
 	if scores.canReuseCache {
-		clusters, err = ClusterFromCache(distances, nItems, &cache)
+		clusters, err = ClusterFromCache(*distances, nItems, &cache)
 		if err != nil {
 			panic(err)
 		}
 	} else {
-		clusters, err = ClusterFromScratch(distances, nItems)
+		clusters, err = ClusterFromScratch(*distances, nItems)
 		if err != nil {
 			panic(err)
 		}
 	}
 
 	progressIn <- ProgressEvent{RESULTS_TO_SAVE, request.Threshold + 1}
-	for c := range clusters.Format(request.Threshold, distances, scores.STs) {
+	for c := range clusters.Format(request.Threshold, *distances, scores.STs) {
 		results <- c
 		progressIn <- ProgressEvent{SAVED_RESULT, 1}
 	}
 
 	close(results)
 	<-done
-	return scores.STs, clusters, distances
+	return scores.STs, clusters, *distances
 }

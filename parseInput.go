@@ -7,9 +7,8 @@ import (
 )
 
 const (
-	PENDING    int = 0
-	COMPLETE   int = 1
-	FROM_CACHE int = 2
+	PENDING  int = 0
+	COMPLETE int = 1
 )
 
 type CgmlstSt = string
