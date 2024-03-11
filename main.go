@@ -13,19 +13,6 @@ import (
 
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 
-func ScannerToReader(scanner *bufio.Scanner) io.Reader {
-	reader, writer := io.Pipe()
-
-	go func() {
-		defer writer.Close()
-		for scanner.Scan() {
-			writer.Write(scanner.Bytes())
-		}
-	}()
-
-	return reader
-}
-
 func main() {
 	flag.Parse()
 	if *cpuprofile != "" {
@@ -40,7 +27,6 @@ func main() {
 		defer pprof.StopCPUProfile()
 	}
 	//file, err := os.Open("testdata/simple_test.json")
-	//var stdinScanner = bufio.NewScanner(file)
 	//if err != nil {
 	//	panic(err)
 	//}
@@ -82,7 +68,7 @@ func _main(r io.Reader, w io.Writer) ([]CgmlstSt, Clusters, []int) {
 		panic(err)
 	}
 
-	var scores scoresStore
+	var scores ScoresStore
 	if scores, err = NewScores(request, &cache, index); err != nil {
 		panic(err)
 	}

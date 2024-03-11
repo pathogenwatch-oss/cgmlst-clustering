@@ -6,11 +6,6 @@ import (
 	"sync"
 )
 
-const (
-	PENDING  int = 0
-	COMPLETE int = 1
-)
-
 type CgmlstSt = string
 
 type Request struct {

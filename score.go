@@ -23,7 +23,7 @@ func (c *Comparer) compare(stA int, stB int) int {
 	return geneCount - alleleCount
 }
 
-func scoreProfiles(workerID int, jobs chan [3]int, scores *scoresStore, comparer Comparer, wg *sync.WaitGroup) {
+func scoreProfiles(workerID int, jobs chan [3]int, scores *ScoresStore, comparer Comparer, wg *sync.WaitGroup) {
 	nScores := 0
 	defer func() {
 		log.Printf("Worker %d has computed %d scores", workerID, nScores)
@@ -51,7 +51,7 @@ func scoreProfiles(workerID int, jobs chan [3]int, scores *scoresStore, comparer
 //	value, status int
 //}
 
-type scoresStore struct {
+type ScoresStore struct {
 	STs           []CgmlstSt
 	scores        []int
 	statuses      []int32
@@ -59,7 +59,7 @@ type scoresStore struct {
 	canReuseCache bool  // can reuse the cached clustering
 }
 
-func (s *scoresStore) Done() int {
+func (s *ScoresStore) Done() int {
 	return len(s.scores) - int(s.Todo())
 }
 
@@ -107,7 +107,7 @@ func sortSts(request Request, cache *Cache, index *IndexMap) (canReuseCache bool
 	return
 }
 
-func NewScores(request Request, cache *Cache, index *IndexMap) (s scoresStore, err error) {
+func NewScores(request Request, cache *Cache, index *IndexMap) (s ScoresStore, err error) {
 	var cacheToScoresMap []int
 	s.canReuseCache, s.STs, cacheToScoresMap = sortSts(request, cache, index)
 	nSTs := len(s.STs)
@@ -126,7 +126,7 @@ func NewScores(request Request, cache *Cache, index *IndexMap) (s scoresStore, e
 			return
 		}
 		scoresToIndexMap[scoresIdx] = stA
-		for _, _ = range scoresToIndexMap[:scoresIdx] {
+		for range scoresToIndexMap[:scoresIdx] {
 			s.scores[scoreDetailsIndex] = -1
 			scoreDetailsIndex++
 		}
@@ -139,7 +139,7 @@ func NewScores(request Request, cache *Cache, index *IndexMap) (s scoresStore, e
 	return
 }
 
-func (s scoresStore) getIndex(stA int, stB int) (int, error) {
+func (s ScoresStore) getIndex(stA int, stB int) (int, error) {
 	minIdx, maxIdx := stA, stB
 	if stA == stB {
 		return 0, fmt.Errorf("STs shouldn't both be %d", stA)
@@ -151,13 +151,13 @@ func (s scoresStore) getIndex(stA int, stB int) (int, error) {
 	return scoreIdx, nil
 }
 
-func (s *scoresStore) SetIdx(idx int, score int) error {
+func (s *ScoresStore) SetIdx(idx int, score int) error {
 	s.scores[idx] = score
 	atomic.AddInt32(&s.todo, -1)
 	return nil
 }
 
-func (s *scoresStore) Set(stA int, stB int, score int) error {
+func (s *ScoresStore) Set(stA int, stB int, score int) error {
 	idx, err := s.getIndex(stA, stB)
 	if err != nil {
 		return err
@@ -165,7 +165,7 @@ func (s *scoresStore) Set(stA int, stB int, score int) error {
 	return s.SetIdx(idx, score)
 }
 
-func (s scoresStore) Distances() (*[]int, error) {
+func (s ScoresStore) Distances() (*[]int, error) {
 	return &s.scores, nil
 
 	//distances := make([]int, len(s.scores))
@@ -181,11 +181,11 @@ func (s scoresStore) Distances() (*[]int, error) {
 	//return distances, nil
 }
 
-func (s scoresStore) Todo() int32 {
+func (s ScoresStore) Todo() int32 {
 	return atomic.LoadInt32(&s.todo)
 }
 
-func (s *scoresStore) UpdateFromCache(request Request, c *Cache, cacheToScoresMap []int) (err error) {
+func (s *ScoresStore) UpdateFromCache(request Request, c *Cache, cacheToScoresMap []int) (err error) {
 	var (
 		distance             int
 		aInCache, bInCache   int // These are indexes into the cache
@@ -247,8 +247,8 @@ func (s *scoresStore) UpdateFromCache(request Request, c *Cache, cacheToScoresMa
 	return
 }
 
-func (s *scoresStore) Complete(indexer *IndexMap, progress chan ProgressEvent) (done chan bool, err chan error) {
-	numWorkers := 1
+func (s *ScoresStore) Complete(indexer *IndexMap, progress chan ProgressEvent) (done chan bool, err chan error) {
+	numWorkers := 10
 	var scoreWg sync.WaitGroup
 
 	err = make(chan error)

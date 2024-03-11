@@ -169,7 +169,7 @@ package main
 //		t.Fatalf("Didn't supply all the required profiles\nMissing: %v\nRequested: %v\n", missing, request.STs)
 //	}
 //
-//	var scores scoresStore
+//	var scores ScoresStore
 //	if scores, err = NewScores(request, cache, index); err != nil {
 //		t.Fatal(err)
 //	}
@@ -220,7 +220,7 @@ package main
 //		t.Fatal(err)
 //	}
 //
-//	var scores scoresStore
+//	var scores ScoresStore
 //	if scores, err = NewScores(request, cache, index); err != nil {
 //		t.Fatal(err)
 //	}
@@ -266,7 +266,7 @@ package main
 //		t.Fatal(err)
 //	}
 //
-//	var scores scoresStore
+//	var scores ScoresStore
 //	if scores, err = NewScores(request, cache, index); err != nil {
 //		t.Fatal(err)
 //	}
@@ -334,7 +334,7 @@ package main
 //		t.Fatal(err)
 //	}
 //
-//	var scores scoresStore
+//	var scores ScoresStore
 //	if scores, err = NewScores(request, cache, index); err != nil {
 //		t.Fatal(err)
 //	}
