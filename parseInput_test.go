@@ -159,7 +159,7 @@ package main
 //	if err != nil {
 //		t.Fatal(err)
 //	}
-//	if err = index.Complete(); err == nil {
+//	if err = index.RunScoring(); err == nil {
 //		missing := make([]CgmlstSt, 0, len(request.STs))
 //		for st, idx := range index.lookup {
 //			if !index.profiles[idx].Ready {

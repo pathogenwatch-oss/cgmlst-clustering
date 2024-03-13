@@ -6,7 +6,7 @@ import (
 	"github.com/RoaringBitmap/gocroaring"
 )
 
-type Index struct {
+type BitProfiles struct {
 	Genes   *BitArray
 	Alleles *gocroaring.Bitmap
 	Ready   bool
@@ -47,16 +47,16 @@ func (t *Tokeniser) Get(key AlleleKey) uint32 {
 	return value
 }
 
-type IndexMap struct {
+type ProfilesMap struct {
 	lookup     map[CgmlstSt]int
-	indices    []Index
+	indices    []BitProfiles
 	schemeSize uint32
 }
 
 type Indexer struct {
 	geneTokens   *Tokeniser
 	alleleTokens *Tokeniser
-	index        *IndexMap
+	index        *ProfilesMap
 }
 
 func NewIndexer(STs []CgmlstSt) (i *Indexer) {
@@ -68,8 +68,8 @@ func NewIndexer(STs []CgmlstSt) (i *Indexer) {
 	return &Indexer{
 		geneTokens:   NewTokeniser(),
 		alleleTokens: NewTokeniser(),
-		index: &IndexMap{
-			indices:    make([]Index, nSts),
+		index: &ProfilesMap{
+			indices:    make([]BitProfiles, nSts),
 			lookup:     lookup,
 			schemeSize: ALMOST_INF,
 		},
@@ -81,7 +81,7 @@ func (i *Indexer) Index(profile *Profile) (bool, error) {
 	var (
 		offset int
 		ok     bool
-		index  *Index
+		index  *BitProfiles
 	)
 
 	if offset, ok = i.index.lookup[profile.ST]; !ok {
@@ -117,7 +117,7 @@ func (i *Indexer) Index(profile *Profile) (bool, error) {
 	return false, nil
 }
 
-func (i *IndexMap) Complete() error {
+func (i *ProfilesMap) Complete() error {
 	for st, idx := range i.lookup {
 		if !i.indices[idx].Ready {
 			return fmt.Errorf("didn't see a profile for ST '%s'", st)

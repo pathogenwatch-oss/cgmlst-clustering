@@ -26,7 +26,7 @@ package main
 //		t.Fatal("Cannot reuse cache")
 //	}
 //
-//	scoreComplete, errChan := scores.Complete(index, progress)
+//	scoreComplete, errChan := scores.RunScoring(index, progress)
 //
 //	select {
 //	case err := <-errChan:
@@ -88,7 +88,7 @@ package main
 //		t.Fatal("Cannot reuse cache")
 //	}
 //
-//	scoreComplete, errChan := scores.Complete(index, progress)
+//	scoreComplete, errChan := scores.RunScoring(index, progress)
 //
 //	select {
 //	case err := <-errChan:

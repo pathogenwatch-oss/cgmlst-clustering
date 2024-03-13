@@ -41,7 +41,7 @@ func indexProfile(profile *Profile, index *Indexer, progress chan ProgressEvent)
 	}
 }
 
-func parse(r io.Reader, progress chan ProgressEvent) (request Request, cache Cache, index *IndexMap, err error) {
+func parse(r io.Reader, progress chan ProgressEvent) (request Request, cache Cache, index *ProfilesMap, err error) {
 	err = nil
 	decoder := json.NewDecoder(r)
 	if requestErr := decoder.Decode(&request); requestErr != nil {

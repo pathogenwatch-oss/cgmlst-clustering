@@ -83,7 +83,7 @@ func _main(r io.Reader, w io.Writer) ([]CgmlstSt, Clusters, []int) {
 		}
 	}()
 
-	scoreComplete, errChan := scores.Complete(index, progressIn)
+	scoreComplete, errChan := scores.RunScoring(*index, progressIn)
 
 	select {
 	case err := <-errChan:

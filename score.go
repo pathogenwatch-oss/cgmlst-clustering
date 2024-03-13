@@ -8,7 +8,7 @@ import (
 )
 
 type Comparer struct {
-	profiles         []Index
+	profiles         []BitProfiles
 	minMatchingGenes int
 }
 
@@ -23,7 +23,7 @@ func (c *Comparer) compare(stA int, stB int) int {
 	return geneCount - alleleCount
 }
 
-func scoreProfiles(workerID int, jobs chan [3]int, scores *ScoresStore, comparer Comparer, wg *sync.WaitGroup) {
+func scoreProfiles(workerID int, jobs chan [3]int, scores *ScoresStore, comparer *Comparer, wg *sync.WaitGroup) {
 	nScores := 0
 	defer func() {
 		log.Printf("Worker %d has computed %d scores", workerID, nScores)
@@ -54,7 +54,6 @@ func scoreProfiles(workerID int, jobs chan [3]int, scores *ScoresStore, comparer
 type ScoresStore struct {
 	STs           []CgmlstSt
 	scores        []int
-	statuses      []int32
 	todo          int32 // remaining scores to compute
 	canReuseCache bool  // can reuse the cached clustering
 }
@@ -65,15 +64,15 @@ func (s *ScoresStore) Done() int {
 
 // Orders the STs by cache (retaining the order in the cache) first and then other STs in the request.
 // The location of the ST links to `cacheToScoresMap`.
-func sortSts(request Request, cache *Cache, index *IndexMap) (canReuseCache bool, STs []CgmlstSt, cacheToScoresMap []int) {
+func sortSts(requestSts []CgmlstSt, cache *Cache, profiles *ProfilesMap) (canReuseCache bool, STs []CgmlstSt, cacheToScoresMap []int) {
 	if len(cache.Sts) == 0 {
 		canReuseCache = false
 	} else {
 		canReuseCache = true
 	}
 
-	STs = make([]CgmlstSt, len(request.STs))
-	cacheToScoresMap = make([]int, len(cache.Sts))
+	STs = make([]CgmlstSt, len(requestSts))
+	cacheToScoresMap = make([]int, len(cache.Sts)) // Allows to populate the cache scores later.
 
 	seenSTs := make(map[CgmlstSt]int)
 
@@ -83,19 +82,19 @@ func sortSts(request Request, cache *Cache, index *IndexMap) (canReuseCache bool
 			// duplicate ST in cache is not good
 			canReuseCache = false
 			cacheToScoresMap[cacheIdx] = previousIdx
-		} else if _, needed := index.lookup[st]; !needed {
+		} else if _, needed := profiles.lookup[st]; !needed {
 			// The cache contains STs we don't need
 			canReuseCache = false
 			cacheToScoresMap[cacheIdx] = -1
 		} else {
 			seenSTs[st] = scoresIdx
 			STs[scoresIdx] = st
-			cacheToScoresMap[cacheIdx] = scoresIdx
+			cacheToScoresMap[cacheIdx] = scoresIdx // point position in cache ST array to order in STs array
 			scoresIdx++
 		}
 	}
 
-	for _, st := range request.STs {
+	for _, st := range requestSts {
 		if _, seen := seenSTs[st]; !seen {
 			seenSTs[st] = scoresIdx
 			STs[scoresIdx] = st
@@ -107,32 +106,32 @@ func sortSts(request Request, cache *Cache, index *IndexMap) (canReuseCache bool
 	return
 }
 
-func NewScores(request Request, cache *Cache, index *IndexMap) (s ScoresStore, err error) {
+func NewScores(request Request, cache *Cache, profiles *ProfilesMap) (s ScoresStore, err error) {
 	var cacheToScoresMap []int
-	s.canReuseCache, s.STs, cacheToScoresMap = sortSts(request, cache, index)
+	s.canReuseCache, s.STs, cacheToScoresMap = sortSts(request.STs, cache, profiles)
 	nSTs := len(s.STs)
 	s.scores = make([]int, nSTs*(nSTs-1)/2)
 
-	scoresToIndexMap := make([]int, nSTs)
+	scoresToProfileMap := make([]int, nSTs)
 
 	var (
-		scoreDetailsIndex int
-		stA               int
-		found             bool
+		scoresIndex int
+		stA         int
+		found       bool
 	)
 	for scoresIdx, st := range s.STs {
-		if stA, found = index.lookup[st]; !found {
-			err = fmt.Errorf("could not find ST '%s' in index", st)
+		if stA, found = profiles.lookup[st]; !found {
+			err = fmt.Errorf("could not find ST '%s' in profiles", st)
 			return
 		}
-		scoresToIndexMap[scoresIdx] = stA
-		for range scoresToIndexMap[:scoresIdx] {
-			s.scores[scoreDetailsIndex] = -1
-			scoreDetailsIndex++
+		scoresToProfileMap[scoresIdx] = stA
+		for range scoresToProfileMap[:scoresIdx] {
+			s.scores[scoresIndex] = -1
+			scoresIndex++
 		}
 	}
 
-	if err = s.UpdateFromCache(request, cache, cacheToScoresMap); err != nil {
+	if err = s.UpdateFromCache(request.Threshold, cache, cacheToScoresMap); err != nil {
 		return
 	}
 
@@ -185,7 +184,7 @@ func (s ScoresStore) Todo() int32 {
 	return atomic.LoadInt32(&s.todo)
 }
 
-func (s *ScoresStore) UpdateFromCache(request Request, c *Cache, cacheToScoresMap []int) (err error) {
+func (s *ScoresStore) UpdateFromCache(threshold int, c *Cache, cacheToScoresMap []int) (err error) {
 	var (
 		distance             int
 		aInCache, bInCache   int // These are indexes into the cache
@@ -194,7 +193,7 @@ func (s *ScoresStore) UpdateFromCache(request Request, c *Cache, cacheToScoresMa
 		nStsReusedFromCache  int
 	)
 
-	if c.Threshold >= request.Threshold {
+	if c.Threshold >= threshold {
 		for aInCache, aInScores := range cacheToScoresMap {
 			if aInScores < 0 {
 				continue
@@ -210,7 +209,10 @@ func (s *ScoresStore) UpdateFromCache(request Request, c *Cache, cacheToScoresMa
 					// and we know that the cached scores are always
 					// in a continuous block at the beginning of the
 					// output.
-					s.Set(aInScores, bInScores, ALMOST_INF)
+					err = s.Set(aInScores, bInScores, ALMOST_INF)
+					if err != nil {
+						return err
+					}
 				}
 			}
 		}
@@ -239,7 +241,7 @@ func (s *ScoresStore) UpdateFromCache(request Request, c *Cache, cacheToScoresMa
 		}
 	}
 
-	if c.Threshold >= request.Threshold {
+	if c.Threshold >= threshold {
 		nCached := (nStsReusedFromCache * (nStsReusedFromCache - 1)) / 2
 		s.todo = int32(len(s.scores) - nCached)
 	}
@@ -247,7 +249,7 @@ func (s *ScoresStore) UpdateFromCache(request Request, c *Cache, cacheToScoresMa
 	return
 }
 
-func (s *ScoresStore) Complete(indexer *IndexMap, progress chan ProgressEvent) (done chan bool, err chan error) {
+func (s *ScoresStore) RunScoring(profileMap ProfilesMap, progress chan ProgressEvent) (done chan bool, err chan error) {
 	numWorkers := 10
 	var scoreWg sync.WaitGroup
 
@@ -282,10 +284,10 @@ func (s *ScoresStore) Complete(indexer *IndexMap, progress chan ProgressEvent) (
 		close(_scoreTasks)
 	}()
 
-	minMatchingGenes := int(indexer.schemeSize * 8 / 10)
+	minMatchingGenes := int(profileMap.schemeSize * 8 / 10)
 	for i := 1; i <= numWorkers; i++ {
 		scoreWg.Add(1)
-		go scoreProfiles(i, scoreTasks, s, Comparer{indexer.indices, minMatchingGenes}, &scoreWg)
+		go scoreProfiles(i, scoreTasks, s, &Comparer{profileMap.indices, minMatchingGenes}, &scoreWg)
 	}
 
 	go func() {
