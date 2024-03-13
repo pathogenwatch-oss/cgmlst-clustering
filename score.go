@@ -8,13 +8,13 @@ import (
 )
 
 type Comparer struct {
-	profiles         []BitProfiles
+	profilesMap      ProfilesMap
 	minMatchingGenes int
 }
 
 func (c *Comparer) compare(stA int, stB int) int {
-	profileA := c.profiles[stA]
-	profileB := c.profiles[stB]
+	profileA := c.profilesMap.indices[stA]
+	profileB := c.profilesMap.indices[stB]
 	geneCount := CompareBits(profileA.Genes, profileB.Genes)
 	if geneCount < c.minMatchingGenes {
 		return ALMOST_INF
@@ -121,7 +121,7 @@ func NewScores(request Request, cache *Cache, profiles *ProfilesMap) (s ScoresSt
 	)
 	for scoresIdx, st := range s.STs {
 		if stA, found = profiles.lookup[st]; !found {
-			err = fmt.Errorf("could not find ST '%s' in profiles", st)
+			err = fmt.Errorf("could not find ST '%s' in profilesMap", st)
 			return
 		}
 		scoresToProfileMap[scoresIdx] = stA
@@ -268,26 +268,22 @@ func (s *ScoresStore) RunScoring(profileMap ProfilesMap, progress chan ProgressE
 
 	go func() {
 		scoreIndex := 0
-		for i := 1; i < len(s.STs); i++ {
-			for j := 0; j < i; j++ {
+		for i, stA := range s.STs {
+			stAIndex := profileMap.lookup[stA]
+			for _, stB := range s.STs[:i] {
 				if s.scores[scoreIndex] == -1 {
-					_scoreTasks <- [3]int{j, i, scoreIndex}
+					_scoreTasks <- [3]int{stAIndex, profileMap.lookup[stB], scoreIndex}
 				}
 				scoreIndex++
 			}
 		}
-		//for idx, score := range s.scores {
-		//	if score.status == PENDING {
-		//		_scoreTasks <- idx
-		//	}
-		//}
 		close(_scoreTasks)
 	}()
 
 	minMatchingGenes := int(profileMap.schemeSize * 8 / 10)
 	for i := 1; i <= numWorkers; i++ {
 		scoreWg.Add(1)
-		go scoreProfiles(i, scoreTasks, s, &Comparer{profileMap.indices, minMatchingGenes}, &scoreWg)
+		go scoreProfiles(i, scoreTasks, s, &Comparer{profileMap, minMatchingGenes}, &scoreWg)
 	}
 
 	go func() {

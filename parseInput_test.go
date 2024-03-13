@@ -135,7 +135,7 @@ package main
 //		t.Fatal(err)
 //	}
 //
-//	i := index.profiles[index.lookup["abc"]]
+//	i := index.profilesMap[index.lookup["abc"]]
 //	if !i.Ready {
 //		t.Fatal("Profile not in index")
 //	}
@@ -162,11 +162,11 @@ package main
 //	if err = index.RunScoring(); err == nil {
 //		missing := make([]CgmlstSt, 0, len(request.STs))
 //		for st, idx := range index.lookup {
-//			if !index.profiles[idx].Ready {
+//			if !index.profilesMap[idx].Ready {
 //				missing = append(missing, st)
 //			}
 //		}
-//		t.Fatalf("Didn't supply all the required profiles\nMissing: %v\nRequested: %v\n", missing, request.STs)
+//		t.Fatalf("Didn't supply all the required profilesMap\nMissing: %v\nRequested: %v\n", missing, request.STs)
 //	}
 //
 //	var scores ScoresStore
@@ -185,13 +185,13 @@ package main
 //		t.Fatalf("Got %v\n", scores.STs)
 //	}
 //	nProfiles := 0
-//	for _, i := range index.profiles {
+//	for _, i := range index.profilesMap {
 //		if i.Ready {
 //			nProfiles++
 //		}
 //	}
 //	if nProfiles != 2 {
-//		t.Fatalf("Expected 2 profiles, got %v\n", nProfiles)
+//		t.Fatalf("Expected 2 profilesMap, got %v\n", nProfiles)
 //	}
 //	if len(scores.scores) != 10 {
 //		t.Fatal("Expected 10 scores")
@@ -235,13 +235,13 @@ package main
 //		t.Fatalf("Got %v\n", scores.STs)
 //	}
 //	nProfiles := 0
-//	for _, i := range index.profiles {
+//	for _, i := range index.profilesMap {
 //		if i.Ready {
 //			nProfiles++
 //		}
 //	}
 //	if nProfiles != 2 {
-//		t.Fatalf("Expected 2 profiles, got %v\n", nProfiles)
+//		t.Fatalf("Expected 2 profilesMap, got %v\n", nProfiles)
 //	}
 //	if len(scores.scores) != 10 {
 //		t.Fatal("Expected 10 scores")
@@ -346,13 +346,13 @@ package main
 //	}
 //
 //	nProfiles := 0
-//	for _, i := range index.profiles {
+//	for _, i := range index.profilesMap {
 //		if i.Ready {
 //			nProfiles++
 //		}
 //	}
 //	if actual, expected := nProfiles, nSTs; actual != expected {
-//		t.Fatalf("Expected %d profiles, got %d\n", expected, actual)
+//		t.Fatalf("Expected %d profilesMap, got %d\n", expected, actual)
 //	}
 //	if actual, expected := len(scores.scores), nSTs*(nSTs-1)/2; actual != expected {
 //		t.Fatalf("Expected %d scores, got %d\n", expected, actual)
@@ -378,12 +378,12 @@ package main
 //		t.Fatal(doc.Err)
 //	}
 //
-//	profiles := 0
+//	profilesMap := 0
 //	for docs.Next() {
 //		doc = docs.Doc
 //		for doc.Next() {
 //			if string(doc.Key()) == "results" {
-//				profiles++
+//				profilesMap++
 //				break
 //			}
 //		}
@@ -395,7 +395,7 @@ package main
 //		t.Fatal(doc.Err)
 //	}
 //
-//	if profiles != 7000 {
-//		t.Fatalf("Expected 10000 profiles, got %d\n", profiles)
+//	if profilesMap != 7000 {
+//		t.Fatalf("Expected 10000 profilesMap, got %d\n", profilesMap)
 //	}
 //}

@@ -40,8 +40,19 @@ func TestComparer_compare(t *testing.T) {
 		Alleles: gocroaring.New(0, 2, 3, 4, 7, 8, 9, 10, 11),
 		Ready:   false,
 	}
+
+	profileMap := ProfilesMap{
+		indices:    indices,
+		schemeSize: 10,
+		lookup: map[CgmlstSt]int{
+			"a": 0,
+			"b": 1,
+			"c": 2,
+			"d": 3,
+		},
+	}
 	c := &Comparer{
-		profiles:         indices,
+		profilesMap:      profileMap,
 		minMatchingGenes: 8,
 	}
 	type args struct {
@@ -202,7 +213,7 @@ func TestSortSts(t *testing.T) {
 //	}
 //	index := Indexer{
 //		lookup:  map[string]int{"a": 0, "b": 1, "d": 2, "e": 3},
-//		profiles: []BitProfiles{BitProfiles{Ready: true}, BitProfiles{Ready: true}, BitProfiles{Ready: true}, BitProfiles{Ready: true}},
+//		profilesMap: []BitProfiles{BitProfiles{Ready: true}, BitProfiles{Ready: true}, BitProfiles{Ready: true}, BitProfiles{Ready: true}},
 //	}
 //
 //	scores, err := NewScores(request, cache, &index)
@@ -234,13 +245,13 @@ func TestSortSts(t *testing.T) {
 //	}
 //	index := Indexer{
 //		lookup:  make(map[CgmlstSt]int),
-//		profiles: make([]BitProfiles, 1000),
+//		profilesMap: make([]BitProfiles, 1000),
 //	}
 //	for i := 0; i < 1000; i++ {
 //		st := fmt.Sprintf("st%d", i)
 //		request.STs[i] = st
 //		index.lookup[st] = i
-//		index.profiles[i].Ready = true
+//		index.profilesMap[i].Ready = true
 //	}
 //
 //	b.ResetTimer()
@@ -267,12 +278,12 @@ func TestSortSts(t *testing.T) {
 //		Sts: []CgmlstSt{},
 //	}
 //	index := Indexer{
-//		profiles: make([]BitProfiles, len(request.STs)),
+//		profilesMap: make([]BitProfiles, len(request.STs)),
 //		lookup:  make(map[CgmlstSt]int),
 //	}
 //	for i, st := range request.STs {
 //		index.lookup[st] = i
-//		index.profiles[i].Ready = true
+//		index.profilesMap[i].Ready = true
 //	}
 //
 //	scores, err := NewScores(request, &cache, &index)
@@ -313,12 +324,12 @@ func TestSortSts(t *testing.T) {
 //		Sts: []CgmlstSt{},
 //	}
 //	index := Indexer{
-//		profiles: make([]BitProfiles, len(request.STs)),
+//		profilesMap: make([]BitProfiles, len(request.STs)),
 //		lookup:  make(map[CgmlstSt]int),
 //	}
 //	for i, st := range request.STs {
 //		index.lookup[st] = i
-//		index.profiles[i].Ready = true
+//		index.profilesMap[i].Ready = true
 //	}
 //
 //	scores, err := NewScores(request, &cache, &index)
@@ -352,7 +363,7 @@ func TestSortSts(t *testing.T) {
 //}
 //
 //func TestComparer(t *testing.T) {
-//	profiles := [...]Profile{
+//	profilesMap := [...]Profile{
 //		Profile{
 //			ST: "abc123",
 //			Matches: map[string]interface{}{
@@ -381,7 +392,7 @@ func TestSortSts(t *testing.T) {
 //	}
 //
 //	indexer := NewIndexer([]string{"abc123", "bcd234", "cde345"})
-//	for i, p := range profiles {
+//	for i, p := range profilesMap {
 //		indexer.BitProfiles(&p)
 //		for j := 0; j < 10000; j++ {
 //			indexer.alleleTokens.Get(AlleleKey{
@@ -391,14 +402,14 @@ func TestSortSts(t *testing.T) {
 //		}
 //	}
 //
-//	if nBlocks := len(indexer.profiles[indexer.lookup["bcd234"]].Alleles.blocks); nBlocks != 157 {
+//	if nBlocks := len(indexer.profilesMap[indexer.lookup["bcd234"]].Alleles.blocks); nBlocks != 157 {
 //		t.Fatalf("Expected 157 blocks, got %d\n", nBlocks)
 //	}
-//	if nBlocks := len(indexer.profiles[indexer.lookup["cde345"]].Alleles.blocks); nBlocks != 313 {
+//	if nBlocks := len(indexer.profilesMap[indexer.lookup["cde345"]].Alleles.blocks); nBlocks != 313 {
 //		t.Fatalf("Expected 313 blocks, got %d\n", nBlocks)
 //	}
 //
-//	comparer := Comparer{indexer.profiles, 3}
+//	comparer := Comparer{indexer.profilesMap, 3}
 //	if value := comparer.compare(0, 1); value != ALMOST_INF {
 //		t.Fatalf("Expected %d, got %d\n", ALMOST_INF, value)
 //	}
