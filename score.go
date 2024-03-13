@@ -56,6 +56,7 @@ type ScoresStore struct {
 	scores        []int
 	todo          int32 // remaining scores to compute
 	canReuseCache bool  // can reuse the cached clustering
+	cacheSize     int
 }
 
 func (s *ScoresStore) Done() int {
@@ -64,7 +65,7 @@ func (s *ScoresStore) Done() int {
 
 // Orders the STs by cache (retaining the order in the cache) first and then other STs in the request.
 // The location of the ST links to `cacheToScoresMap`.
-func sortSts(requestSts []CgmlstSt, cache *Cache, profiles *ProfilesMap) (canReuseCache bool, STs []CgmlstSt, cacheToScoresMap []int) {
+func sortSts(requestSts []CgmlstSt, cache *Cache, profiles *ProfilesMap) (canReuseCache bool, STs []CgmlstSt, cacheToScoresMap []int, cacheSize int) {
 	if len(cache.Sts) == 0 {
 		canReuseCache = false
 	} else {
@@ -86,6 +87,7 @@ func sortSts(requestSts []CgmlstSt, cache *Cache, profiles *ProfilesMap) (canReu
 			// The cache contains STs we don't need
 			canReuseCache = false
 			cacheToScoresMap[cacheIdx] = -1
+			fmt.Println("Skipping ST in cache: ", st)
 		} else {
 			seenSTs[st] = scoresIdx
 			STs[scoresIdx] = st
@@ -93,6 +95,9 @@ func sortSts(requestSts []CgmlstSt, cache *Cache, profiles *ProfilesMap) (canReu
 			scoresIdx++
 		}
 	}
+
+	cacheSize = scoresIdx
+	//fmt.Println(scoresIdx)
 
 	for _, st := range requestSts {
 		if _, seen := seenSTs[st]; !seen {
@@ -108,7 +113,7 @@ func sortSts(requestSts []CgmlstSt, cache *Cache, profiles *ProfilesMap) (canReu
 
 func NewScores(request Request, cache *Cache, profiles *ProfilesMap) (s ScoresStore, err error) {
 	var cacheToScoresMap []int
-	s.canReuseCache, s.STs, cacheToScoresMap = sortSts(request.STs, cache, profiles)
+	s.canReuseCache, s.STs, cacheToScoresMap, s.cacheSize = sortSts(request.STs, cache, profiles)
 	nSTs := len(s.STs)
 	s.scores = make([]int, nSTs*(nSTs-1)/2)
 
@@ -269,9 +274,15 @@ func (s *ScoresStore) RunScoring(profileMap ProfilesMap, progress chan ProgressE
 	go func() {
 		scoreIndex := 0
 		profileIndex := make([]int, len(s.STs))
-		for i, st := range s.STs {
+		for i, st := range s.STs[:s.cacheSize] {
+			profileIndex[i] = profileMap.lookup[st]
+		}
+		fmt.Println(profileIndex)
+		for i, st := range s.STs[s.cacheSize:] {
 			stAIndex := profileMap.lookup[st]
-			profileIndex[i] = stAIndex
+			fmt.Printf("i: %d cachesize: %d\n", i, s.cacheSize)
+			profileIndex[i+s.cacheSize] = stAIndex
+			fmt.Println(profileIndex)
 			for j, _ := range s.STs[:i] {
 				if s.scores[scoreIndex] == -1 {
 					_scoreTasks <- [3]int{stAIndex, profileIndex[j], scoreIndex}

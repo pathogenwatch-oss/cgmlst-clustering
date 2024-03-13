@@ -130,7 +130,7 @@ func TestSortSts(t *testing.T) {
 		lookup:  map[string]int{"a": 0, "b": 1, "c": 2},
 		indices: []BitProfiles{{Ready: true}, {Ready: true}, {Ready: true}},
 	}
-	canReuseCache, STs, cacheToScoresMap := sortSts(request.STs, &cache, &index)
+	canReuseCache, STs, cacheToScoresMap, cacheSize := sortSts(request.STs, &cache, &index)
 
 	expected := []CgmlstSt{"a", "b", "c"}
 	if !reflect.DeepEqual(STs, expected) {
@@ -142,11 +142,14 @@ func TestSortSts(t *testing.T) {
 	if len(cacheToScoresMap) != 0 {
 		t.Fatal("Wrong")
 	}
+	if cacheSize != 0 {
+		t.Fatal("Wrong")
+	}
 
 	cache.Sts = []CgmlstSt{"b", "a"}
 	cache.Pi = []int{0, 0}
 	cache.Lambda = []int{0, 0}
-	canReuseCache, STs, cacheToScoresMap = sortSts(request.STs, &cache, &index)
+	canReuseCache, STs, cacheToScoresMap, cacheSize = sortSts(request.STs, &cache, &index)
 	expected = []CgmlstSt{"b", "a", "c"}
 	if !reflect.DeepEqual(STs, expected) {
 		t.Fatalf("Expected %v, got %v\n", expected, STs)
@@ -157,11 +160,14 @@ func TestSortSts(t *testing.T) {
 	if !reflect.DeepEqual(cacheToScoresMap, []int{0, 1}) {
 		t.Fatalf("Didn't expect %v\n", cacheToScoresMap)
 	}
+	if cacheSize != 2 {
+		t.Fatal("Wrong")
+	}
 
 	cache.Sts = []CgmlstSt{"b", "d", "a"}
 	cache.Pi = []int{0, 0, 0}
 	cache.Lambda = []int{0, 0, 0}
-	canReuseCache, STs, cacheToScoresMap = sortSts(request.STs, &cache, &index)
+	canReuseCache, STs, cacheToScoresMap, cacheSize = sortSts(request.STs, &cache, &index)
 	expected = []CgmlstSt{"b", "a", "c"}
 	if !reflect.DeepEqual(STs, expected) {
 		t.Fatalf("Expected %v, got %v\n", expected, STs)
@@ -172,12 +178,15 @@ func TestSortSts(t *testing.T) {
 	if !reflect.DeepEqual(cacheToScoresMap, []int{0, -1, 1}) {
 		t.Fatalf("Didn't expect %v\n", cacheToScoresMap)
 	}
+	if cacheSize != 2 {
+		t.Fatal("Wrong")
+	}
 
 	cache.Sts = []CgmlstSt{"b", "a", "b"}
 	cache.Pi = []int{0, 0, 0}
 	cache.Lambda = []int{0, 0, 0}
 	request.STs = []CgmlstSt{"c", "a", "b", "c"}
-	canReuseCache, STs, cacheToScoresMap = sortSts(request.STs, &cache, &index)
+	canReuseCache, STs, cacheToScoresMap, cacheSize = sortSts(request.STs, &cache, &index)
 	expected = []CgmlstSt{"b", "a", "c"}
 	if !reflect.DeepEqual(STs, expected) {
 		t.Fatalf("Expected %v, got %v\n", expected, STs)
@@ -187,6 +196,9 @@ func TestSortSts(t *testing.T) {
 	}
 	if !reflect.DeepEqual(cacheToScoresMap, []int{0, 1, 0}) {
 		t.Fatalf("Didn't expect %v\n", cacheToScoresMap)
+	}
+	if cacheSize != 2 {
+		t.Fatal("Wrong")
 	}
 }
 
@@ -599,7 +611,7 @@ func TestNewScores(t *testing.T) {
 	}{
 		{"TestCache",
 			args{request, &cache, &profiles},
-			ScoresStore{STs: []CgmlstSt{"1", "2", "5", "6", "3", "4"}, scores: []int{4, 5, 5, 2147483647, 2147483647, 2147483647, -1, -1, -1, -1, -1, -1, -1, -1, -1}, todo: 9, canReuseCache: true},
+			ScoresStore{STs: []CgmlstSt{"1", "2", "5", "6", "3", "4"}, scores: []int{4, 5, 5, 2147483647, 2147483647, 2147483647, -1, -1, -1, -1, -1, -1, -1, -1, -1}, todo: 9, canReuseCache: true, cacheSize: 4},
 			false,
 		},
 	}
