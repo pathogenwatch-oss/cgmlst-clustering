@@ -268,11 +268,13 @@ func (s *ScoresStore) RunScoring(profileMap ProfilesMap, progress chan ProgressE
 
 	go func() {
 		scoreIndex := 0
-		for i, stA := range s.STs {
-			stAIndex := profileMap.lookup[stA]
-			for _, stB := range s.STs[:i] {
+		profileIndex := make([]int, len(s.STs))
+		for i, st := range s.STs {
+			stAIndex := profileMap.lookup[st]
+			profileIndex[i] = stAIndex
+			for j, _ := range s.STs[:i] {
 				if s.scores[scoreIndex] == -1 {
-					_scoreTasks <- [3]int{stAIndex, profileMap.lookup[stB], scoreIndex}
+					_scoreTasks <- [3]int{stAIndex, profileIndex[j], scoreIndex}
 				}
 				scoreIndex++
 			}
