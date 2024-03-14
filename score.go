@@ -112,6 +112,8 @@ func sortSts(requestSts []CgmlstSt, cache *Cache, profiles *ProfilesMap) (canReu
 }
 
 func NewScores(request Request, cache *Cache, profiles *ProfilesMap) (s ScoresStore, err error) {
+
+	//fmt.Println("STs in cache: ", len(cache.Sts))
 	var cacheToScoresMap []int
 	s.canReuseCache, s.STs, cacheToScoresMap, s.cacheSize = sortSts(request.STs, cache, profiles)
 	nSTs := len(s.STs)
@@ -141,6 +143,19 @@ func NewScores(request Request, cache *Cache, profiles *ProfilesMap) (s ScoresSt
 	}
 
 	return
+}
+
+func GetIndex(stA int, stB int) (int, error) {
+	minIdx, maxIdx := stA, stB
+	if stA == stB {
+		return 0, fmt.Errorf("STs shouldn't both be %d", stA)
+	} else if stA > stB {
+		minIdx = stB
+		maxIdx = stA
+	}
+	scoreIdx := ((maxIdx * (maxIdx - 1)) / 2) + minIdx
+	return scoreIdx, nil
+
 }
 
 func (s ScoresStore) getIndex(stA int, stB int) (int, error) {
@@ -254,6 +269,19 @@ func (s *ScoresStore) UpdateFromCache(threshold int, c *Cache, cacheToScoresMap 
 	return
 }
 
+// Initialises
+func indexCache(STs *[]CgmlstSt, stIndexMap *map[CgmlstSt]int, cacheSize int) (int, []int) {
+	profileIndex := make([]int, len(*STs))
+	var i int
+	var st string
+	for i, st = range (*STs)[:cacheSize] {
+		profileIndex[i] = (*stIndexMap)[st]
+	}
+	scoreIndex, err := GetIndex(i-1, i)
+	scoreIndex++
+	return scoreIndex, profileIndex
+}
+
 func (s *ScoresStore) RunScoring(profileMap ProfilesMap, progress chan ProgressEvent) (done chan bool, err chan error) {
 	numWorkers := 10
 	var scoreWg sync.WaitGroup
@@ -272,18 +300,14 @@ func (s *ScoresStore) RunScoring(profileMap ProfilesMap, progress chan ProgressE
 	}()
 
 	go func() {
-		scoreIndex := 0
-		profileIndex := make([]int, len(s.STs))
-		for i, st := range s.STs[:s.cacheSize] {
-			profileIndex[i] = profileMap.lookup[st]
-		}
-		fmt.Println(profileIndex)
+		scoreIndex, profileIndex := indexCache(&s.STs, &profileMap.lookup, s.cacheSize)
 		for i, st := range s.STs[s.cacheSize:] {
 			stAIndex := profileMap.lookup[st]
-			fmt.Printf("i: %d cachesize: %d\n", i, s.cacheSize)
-			profileIndex[i+s.cacheSize] = stAIndex
-			fmt.Println(profileIndex)
-			for j, _ := range s.STs[:i] {
+			//fmt.Printf("i: %d cachesize: %d\n", i, s.cacheSize)
+			currentRow := i + s.cacheSize
+			profileIndex[currentRow] = stAIndex
+			//fmt.Println(profileIndex)
+			for j := 0; j < currentRow; j++ {
 				if s.scores[scoreIndex] == -1 {
 					_scoreTasks <- [3]int{stAIndex, profileIndex[j], scoreIndex}
 				}
