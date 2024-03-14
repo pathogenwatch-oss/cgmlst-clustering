@@ -119,9 +119,9 @@ func (w *ProgressWorker) Progress() ProgressMessage {
 	case PARSING_CACHE:
 		message = "Loading data from the cache"
 	case PARSING_PROFILES:
-		message = "Parsing CGMLST profiles"
+		message = "Parsing CGMLST profilesMap"
 	case INDEXING_PROFILES:
-		message = "Indexing CGMLST profiles"
+		message = "Indexing CGMLST profilesMap"
 	case SCORING:
 		message = "Calculating pairwise distances"
 	case CLUSTERING:

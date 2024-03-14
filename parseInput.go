@@ -6,12 +6,6 @@ import (
 	"sync"
 )
 
-const (
-	PENDING    int = 0
-	COMPLETE   int = 1
-	FROM_CACHE int = 2
-)
-
 type CgmlstSt = string
 
 type Request struct {
@@ -37,7 +31,7 @@ func NewCache() *Cache {
 type Profile struct {
 	ST         CgmlstSt
 	Matches    []string
-	schemeSize int32
+	schemeSize uint32
 }
 
 func indexProfile(profile *Profile, index *Indexer, progress chan ProgressEvent) {
@@ -47,7 +41,7 @@ func indexProfile(profile *Profile, index *Indexer, progress chan ProgressEvent)
 	}
 }
 
-func parse(r io.Reader, progress chan ProgressEvent) (request Request, cache Cache, index *IndexMap, err error) {
+func parse(r io.Reader, progress chan ProgressEvent) (request Request, cache Cache, index *ProfilesMap, err error) {
 	err = nil
 	decoder := json.NewDecoder(r)
 	if requestErr := decoder.Decode(&request); requestErr != nil {

@@ -1,6 +1,6 @@
-FROM golang:1.20.2-alpine as go
+FROM golang:1.22.1-alpine as build
 
-ARG git_credentials
+RUN apk add --no-cache --update gcc g++
 
 COPY bin/go-get.sh /tmp/
 
@@ -10,10 +10,16 @@ COPY go.sum /tmp/clustering/
 
 COPY *.go /tmp/clustering/
 
+ENV CGO_ENABLED=1
+
 RUN cd /tmp/clustering \
   && go build -o /cgps/clustering \
   && chmod +x /cgps/clustering \
   && rm -rf /tmp/clustering
+
+FROM alpine:3.19.1
+
+COPY --from=build /cgps/clustering /cgps/clustering
 
 WORKDIR /cgps
 

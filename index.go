@@ -3,11 +3,12 @@ package main
 import (
 	"errors"
 	"fmt"
+	"github.com/RoaringBitmap/gocroaring"
 )
 
-type Index struct {
+type BitProfiles struct {
 	Genes   *BitArray
-	Alleles *BitArray
+	Alleles *gocroaring.Bitmap
 	Ready   bool
 }
 
@@ -17,18 +18,18 @@ type AlleleKey struct {
 }
 
 type Tokeniser struct {
-	lookup    map[AlleleKey]uint64
-	nextValue chan uint64
-	lastValue uint64
+	lookup    map[AlleleKey]uint32
+	nextValue chan uint32
+	lastValue uint32
 }
 
 func NewTokeniser() *Tokeniser {
 	t := Tokeniser{
-		nextValue: make(chan uint64),
-		lookup:    make(map[AlleleKey]uint64),
+		nextValue: make(chan uint32),
+		lookup:    make(map[AlleleKey]uint32),
 	}
 	go func() {
-		var i uint64
+		var i uint32
 		for i = 0; ; i++ {
 			t.nextValue <- i
 		}
@@ -36,7 +37,7 @@ func NewTokeniser() *Tokeniser {
 	return &t
 }
 
-func (t *Tokeniser) Get(key AlleleKey) uint64 {
+func (t *Tokeniser) Get(key AlleleKey) uint32 {
 	if value, ok := t.lookup[key]; ok {
 		return value
 	}
@@ -46,16 +47,16 @@ func (t *Tokeniser) Get(key AlleleKey) uint64 {
 	return value
 }
 
-type IndexMap struct {
+type ProfilesMap struct {
 	lookup     map[CgmlstSt]int
-	indices    []Index
-	schemeSize int32
+	indices    []BitProfiles
+	schemeSize uint32
 }
 
 type Indexer struct {
 	geneTokens   *Tokeniser
 	alleleTokens *Tokeniser
-	index        *IndexMap
+	index        *ProfilesMap
 }
 
 func NewIndexer(STs []CgmlstSt) (i *Indexer) {
@@ -67,8 +68,8 @@ func NewIndexer(STs []CgmlstSt) (i *Indexer) {
 	return &Indexer{
 		geneTokens:   NewTokeniser(),
 		alleleTokens: NewTokeniser(),
-		index: &IndexMap{
-			indices:    make([]Index, nSts),
+		index: &ProfilesMap{
+			indices:    make([]BitProfiles, nSts),
 			lookup:     lookup,
 			schemeSize: ALMOST_INF,
 		},
@@ -80,7 +81,7 @@ func (i *Indexer) Index(profile *Profile) (bool, error) {
 	var (
 		offset int
 		ok     bool
-		index  *Index
+		index  *BitProfiles
 	)
 
 	if offset, ok = i.index.lookup[profile.ST]; !ok {
@@ -91,12 +92,9 @@ func (i *Indexer) Index(profile *Profile) (bool, error) {
 		return true, nil
 	}
 	index.Genes = NewBitArray(2500)
-	if i.alleleTokens.lastValue < 2500 {
-		index.Alleles = NewBitArray(2500)
-	} else {
-		index.Alleles = NewBitArray(i.alleleTokens.lastValue)
-	}
-	var bit uint64
+	index.Alleles = gocroaring.New()
+
+	var bit uint32
 	for gene, allele := range profile.Matches {
 		if allele == "" {
 			continue
@@ -105,12 +103,12 @@ func (i *Indexer) Index(profile *Profile) (bool, error) {
 			allele,
 			gene,
 		})
-		index.Alleles.SetBit(bit)
+		index.Alleles.Add(bit)
 		bit := i.geneTokens.Get(AlleleKey{
 			nil,
 			gene,
 		})
-		index.Genes.SetBit(bit)
+		index.Genes.SetBit(uint64(bit))
 	}
 	index.Ready = true
 	if profile.schemeSize < i.index.schemeSize {
@@ -119,10 +117,10 @@ func (i *Indexer) Index(profile *Profile) (bool, error) {
 	return false, nil
 }
 
-func (i *IndexMap) Complete() error {
+func (i *ProfilesMap) Complete() error {
 	for st, idx := range i.lookup {
 		if !i.indices[idx].Ready {
-			return fmt.Errorf("Didn't see a profile for ST '%s'", st)
+			return fmt.Errorf("didn't see a profile for ST '%s'", st)
 		}
 	}
 	return nil

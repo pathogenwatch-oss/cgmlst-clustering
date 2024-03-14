@@ -12,7 +12,7 @@ package main
 //		t.Fatal(err)
 //	}
 //
-//	var scores scoresStore
+//	var scores ScoresStore
 //	if scores, err = NewScores(request, cache, index); err != nil {
 //		t.Fatal(err)
 //	}
@@ -26,7 +26,7 @@ package main
 //		t.Fatal("Cannot reuse cache")
 //	}
 //
-//	scoreComplete, errChan := scores.Complete(index, progress)
+//	scoreComplete, errChan := scores.RunScoring(index, progress)
 //
 //	select {
 //	case err := <-errChan:
@@ -74,7 +74,7 @@ package main
 //		t.Fatal(err)
 //	}
 //
-//	var scores scoresStore
+//	var scores ScoresStore
 //	if scores, err = NewScores(request, cache, index); err != nil {
 //		t.Fatal(err)
 //	}
@@ -88,7 +88,7 @@ package main
 //		t.Fatal("Cannot reuse cache")
 //	}
 //
-//	scoreComplete, errChan := scores.Complete(index, progress)
+//	scoreComplete, errChan := scores.RunScoring(index, progress)
 //
 //	select {
 //	case err := <-errChan:

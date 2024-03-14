@@ -1,125 +1,252 @@
 package main
 
-//func TestSortSts(t *testing.T) {
-//	request := Request{
-//		STs:       []CgmlstSt{"a", "b", "c"},
-//		Threshold: 1,
+import (
+	"github.com/RoaringBitmap/gocroaring"
+	"reflect"
+	"testing"
+)
+
+func TestComparer_compare(t *testing.T) {
+
+	indices := make([]BitProfiles, 4)
+	allPresent := NewBitArray(10)
+	for i := 0; i < 10; i++ {
+		allPresent.SetBit(uint64(i))
+	}
+	oneGap := NewBitArray(10)
+	for i := 0; i < 10; i++ {
+		if i == 5 {
+			continue
+		}
+		oneGap.SetBit(uint64(i))
+	}
+	indices[0] = BitProfiles{
+		Genes:   allPresent,
+		Alleles: gocroaring.New(0, 1, 2, 3, 4, 5, 6, 7, 8, 9),
+		Ready:   true,
+	}
+	indices[1] = BitProfiles{
+		Genes:   allPresent,
+		Alleles: gocroaring.New(0, 2, 3, 4, 5, 6, 7, 8, 9, 10),
+		Ready:   true,
+	}
+	indices[2] = BitProfiles{
+		Genes:   oneGap,
+		Alleles: gocroaring.New(0, 1, 2, 3, 4, 6, 7, 8, 9),
+		Ready:   true,
+	}
+	indices[3] = BitProfiles{
+		Genes:   oneGap,
+		Alleles: gocroaring.New(0, 2, 3, 4, 7, 8, 9, 10, 11),
+		Ready:   false,
+	}
+
+	profileMap := ProfilesMap{
+		indices:    indices,
+		schemeSize: 10,
+		lookup: map[CgmlstSt]int{
+			"a": 0,
+			"b": 1,
+			"c": 2,
+			"d": 3,
+		},
+	}
+	c := &Comparer{
+		profilesMap:      profileMap,
+		minMatchingGenes: 8,
+	}
+	type args struct {
+		stA int
+		stB int
+	}
+	tests := []struct {
+		name string
+		args args
+		want int
+	}{
+		{
+			name: "Identity",
+			args: args{
+				stA: 0,
+				stB: 0,
+			},
+			want: 0,
+		},
+		{
+			name: "1 difference",
+			args: args{
+				stA: 0,
+				stB: 1,
+			},
+			want: 1,
+		},
+		{
+			name: "1 gap",
+			args: args{
+				stA: 0,
+				stB: 2,
+			},
+			want: 0,
+		},
+		{
+			name: "2 differences 1 gap",
+			args: args{
+				stA: 0,
+				stB: 3,
+			},
+			want: 2,
+		},
+		{
+			name: "2 difference 2x1 gap",
+			args: args{
+				stA: 2,
+				stB: 3,
+			},
+			want: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := c.compare(tt.args.stA, tt.args.stB); got != tt.want {
+				t.Errorf("compare() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSortSts(t *testing.T) {
+	request := Request{
+		STs:       []CgmlstSt{"a", "b", "c"},
+		Threshold: 1,
+	}
+	cache := Cache{
+		Sts:       []CgmlstSt{},
+		Edges:     map[int][][2]int{0: {}, 1: {}},
+		Threshold: 1,
+		nEdges:    2,
+	}
+	index := ProfilesMap{
+		lookup:  map[string]int{"a": 0, "b": 1, "c": 2},
+		indices: []BitProfiles{{Ready: true}, {Ready: true}, {Ready: true}},
+	}
+	canReuseCache, STs, cacheToScoresMap, cacheSize := sortSts(request.STs, &cache, &index)
+
+	expected := []CgmlstSt{"a", "b", "c"}
+	if !reflect.DeepEqual(STs, expected) {
+		t.Fatalf("Expected %v, got %v\n", expected, STs)
+	}
+	if canReuseCache {
+		t.Fatal("Wrong")
+	}
+	if len(cacheToScoresMap) != 0 {
+		t.Fatal("Wrong")
+	}
+	if cacheSize != 0 {
+		t.Fatal("Wrong")
+	}
+
+	cache.Sts = []CgmlstSt{"b", "a"}
+	cache.Pi = []int{0, 0}
+	cache.Lambda = []int{0, 0}
+	canReuseCache, STs, cacheToScoresMap, cacheSize = sortSts(request.STs, &cache, &index)
+	expected = []CgmlstSt{"b", "a", "c"}
+	if !reflect.DeepEqual(STs, expected) {
+		t.Fatalf("Expected %v, got %v\n", expected, STs)
+	}
+	if !canReuseCache {
+		t.Fatal("Wrong")
+	}
+	if !reflect.DeepEqual(cacheToScoresMap, []int{0, 1}) {
+		t.Fatalf("Didn't expect %v\n", cacheToScoresMap)
+	}
+	if cacheSize != 2 {
+		t.Fatal("Wrong")
+	}
+
+	cache.Sts = []CgmlstSt{"b", "d", "a"}
+	cache.Pi = []int{0, 0, 0}
+	cache.Lambda = []int{0, 0, 0}
+	canReuseCache, STs, cacheToScoresMap, cacheSize = sortSts(request.STs, &cache, &index)
+	expected = []CgmlstSt{"b", "a", "c"}
+	if !reflect.DeepEqual(STs, expected) {
+		t.Fatalf("Expected %v, got %v\n", expected, STs)
+	}
+	if canReuseCache {
+		t.Fatal("Wrong")
+	}
+	if !reflect.DeepEqual(cacheToScoresMap, []int{0, -1, 1}) {
+		t.Fatalf("Didn't expect %v\n", cacheToScoresMap)
+	}
+	if cacheSize != 2 {
+		t.Fatal("Wrong")
+	}
+
+	cache.Sts = []CgmlstSt{"b", "a", "b"}
+	cache.Pi = []int{0, 0, 0}
+	cache.Lambda = []int{0, 0, 0}
+	request.STs = []CgmlstSt{"c", "a", "b", "c"}
+	canReuseCache, STs, cacheToScoresMap, cacheSize = sortSts(request.STs, &cache, &index)
+	expected = []CgmlstSt{"b", "a", "c"}
+	if !reflect.DeepEqual(STs, expected) {
+		t.Fatalf("Expected %v, got %v\n", expected, STs)
+	}
+	if canReuseCache {
+		t.Fatal("Wrong")
+	}
+	if !reflect.DeepEqual(cacheToScoresMap, []int{0, 1, 0}) {
+		t.Fatalf("Didn't expect %v\n", cacheToScoresMap)
+	}
+	if cacheSize != 2 {
+		t.Fatal("Wrong")
+	}
+}
+
+//func TestParseCacheScores(t *testing.T) {
+//	testFile, err := os.Open("testdata/TestParseCache.bson")
+//	if err != nil {
+//		t.Fatal("Couldn't load test data")
 //	}
-//	cache := Cache{
-//		Sts:       []CgmlstSt{},
-//		Edges:     map[int][][2]int{0: [][2]int{}, 1: [][2]int{}},
-//		Threshold: 1,
-//		nEdges:    2,
+//
+//	docs := bsonkit.GetDocuments(testFile)
+//	docs.Next()
+//	if docs.Err != nil {
+//		t.Fatal(docs.Err)
+//	}
+//	doc := docs.Doc
+//
+//	cache := NewCache()
+//	if err = cache.Update(doc, 5); err != nil {
+//		t.Fatal(err)
+//	}
+//
+//	request := Request{
+//		STs: []CgmlstSt{"a", "b", "d", "e"},
 //	}
 //	index := Indexer{
-//		lookup:  map[string]int{"a": 0, "b": 1, "c": 2},
-//		indices: []Index{Index{Ready: true}, Index{Ready: true}, Index{Ready: true}},
-//	}
-//	canReuseCache, STs, cacheToScoresMap := sortSts(request, &cache, &index)
-//
-//	expected := []CgmlstSt{"a", "b", "c"}
-//	if !reflect.DeepEqual(STs, expected) {
-//		t.Fatalf("Expected %v, got %v\n", expected, STs)
-//	}
-//	if canReuseCache {
-//		t.Fatal("Wrong")
-//	}
-//	if len(cacheToScoresMap) != 0 {
-//		t.Fatal("Wrong")
+//		lookup:  map[string]int{"a": 0, "b": 1, "d": 2, "e": 3},
+//		profilesMap: []BitProfiles{BitProfiles{Ready: true}, BitProfiles{Ready: true}, BitProfiles{Ready: true}, BitProfiles{Ready: true}},
 //	}
 //
-//	cache.Sts = []CgmlstSt{"b", "a"}
-//	cache.Pi = []int{0, 0}
-//	cache.Lambda = []int{0, 0}
-//	canReuseCache, STs, cacheToScoresMap = sortSts(request, &cache, &index)
-//	expected = []CgmlstSt{"b", "a", "c"}
-//	if !reflect.DeepEqual(STs, expected) {
-//		t.Fatalf("Expected %v, got %v\n", expected, STs)
-//	}
-//	if !canReuseCache {
-//		t.Fatal("Wrong")
-//	}
-//	if !reflect.DeepEqual(cacheToScoresMap, []int{0, 1}) {
-//		t.Fatalf("Didn't expect %v\n", cacheToScoresMap)
+//	scores, err := NewScores(request, cache, &index)
+//	if err != nil {
+//		t.Fatal(err)
 //	}
 //
-//	cache.Sts = []CgmlstSt{"b", "d", "a"}
-//	cache.Pi = []int{0, 0, 0}
-//	cache.Lambda = []int{0, 0, 0}
-//	canReuseCache, STs, cacheToScoresMap = sortSts(request, &cache, &index)
-//	expected = []CgmlstSt{"b", "a", "c"}
-//	if !reflect.DeepEqual(STs, expected) {
-//		t.Fatalf("Expected %v, got %v\n", expected, STs)
-//	}
-//	if canReuseCache {
-//		t.Fatal("Wrong")
-//	}
-//	if !reflect.DeepEqual(cacheToScoresMap, []int{0, -1, 1}) {
-//		t.Fatalf("Didn't expect %v\n", cacheToScoresMap)
+//	expectedValues := []int{5, ALMOST_INF, 1, -1, -1, -1}
+//	for i, v := range expectedValues {
+//		if scores.scores[i].value != v {
+//			t.Fatal(i, v, scores.scores[i].value)
+//		}
 //	}
 //
-//	cache.Sts = []CgmlstSt{"b", "a", "b"}
-//	cache.Pi = []int{0, 0, 0}
-//	cache.Lambda = []int{0, 0, 0}
-//	request.STs = []CgmlstSt{"c", "a", "b", "c"}
-//	canReuseCache, STs, cacheToScoresMap = sortSts(request, &cache, &index)
-//	expected = []CgmlstSt{"b", "a", "c"}
-//	if !reflect.DeepEqual(STs, expected) {
-//		t.Fatalf("Expected %v, got %v\n", expected, STs)
-//	}
-//	if canReuseCache {
-//		t.Fatal("Wrong")
-//	}
-//	if !reflect.DeepEqual(cacheToScoresMap, []int{0, 1, 0}) {
-//		t.Fatalf("Didn't expect %v\n", cacheToScoresMap)
+//	expectedStatuses := []int{FROM_CACHE, FROM_CACHE, FROM_CACHE, PENDING, PENDING, PENDING}
+//	for i, v := range expectedStatuses {
+//		if scores.scores[i].status != v {
+//			t.Fatal(i, v, scores.scores[i].status)
+//		}
 //	}
 //}
-//
-////func TestParseCacheScores(t *testing.T) {
-////	testFile, err := os.Open("testdata/TestParseCache.bson")
-////	if err != nil {
-////		t.Fatal("Couldn't load test data")
-////	}
-////
-////	docs := bsonkit.GetDocuments(testFile)
-////	docs.Next()
-////	if docs.Err != nil {
-////		t.Fatal(docs.Err)
-////	}
-////	doc := docs.Doc
-////
-////	cache := NewCache()
-////	if err = cache.Update(doc, 5); err != nil {
-////		t.Fatal(err)
-////	}
-////
-////	request := Request{
-////		STs: []CgmlstSt{"a", "b", "d", "e"},
-////	}
-////	index := Indexer{
-////		lookup:  map[string]int{"a": 0, "b": 1, "d": 2, "e": 3},
-////		indices: []Index{Index{Ready: true}, Index{Ready: true}, Index{Ready: true}, Index{Ready: true}},
-////	}
-////
-////	scores, err := NewScores(request, cache, &index)
-////	if err != nil {
-////		t.Fatal(err)
-////	}
-////
-////	expectedValues := []int{5, ALMOST_INF, 1, -1, -1, -1}
-////	for i, v := range expectedValues {
-////		if scores.scores[i].value != v {
-////			t.Fatal(i, v, scores.scores[i].value)
-////		}
-////	}
-////
-////	expectedStatuses := []int{FROM_CACHE, FROM_CACHE, FROM_CACHE, PENDING, PENDING, PENDING}
-////	for i, v := range expectedStatuses {
-////		if scores.scores[i].status != v {
-////			t.Fatal(i, v, scores.scores[i].status)
-////		}
-////	}
-////}
 //
 //func BenchmarkScores(b *testing.B) {
 //	request := Request{
@@ -130,13 +257,13 @@ package main
 //	}
 //	index := Indexer{
 //		lookup:  make(map[CgmlstSt]int),
-//		indices: make([]Index, 1000),
+//		profilesMap: make([]BitProfiles, 1000),
 //	}
 //	for i := 0; i < 1000; i++ {
 //		st := fmt.Sprintf("st%d", i)
 //		request.STs[i] = st
 //		index.lookup[st] = i
-//		index.indices[i].Ready = true
+//		index.profilesMap[i].Ready = true
 //	}
 //
 //	b.ResetTimer()
@@ -153,87 +280,7 @@ package main
 //	}
 //}
 //
-//func TestNewScores(t *testing.T) {
-//	request := Request{
-//		STs: make([]CgmlstSt, 1000),
-//	}
-//	cache := Cache{
-//		Sts: []CgmlstSt{},
-//	}
-//	index := Indexer{
-//		indices: make([]Index, 1000),
-//		lookup:  make(map[CgmlstSt]int),
-//	}
-//	for i := 0; i < 1000; i++ {
-//		st := fmt.Sprintf("st%d", i)
-//		request.STs[i] = st
-//		index.lookup[st] = i
-//		index.indices[i].Ready = true
-//	}
-//
-//	scores, err := NewScores(request, &cache, &index)
-//	if err != nil {
-//		t.Fatal(err)
-//	}
-//
-//	idx := 0
-//	for a := 1; a < len(request.STs); a++ {
-//		for b := 0; b < a; b++ {
-//			if err := scores.Set(a, b, idx, PENDING); err != nil {
-//				t.Fatal(err)
-//			}
-//			if score, err := scores.Get(a, b); score.value != idx || err != nil {
-//				t.Fatalf("Couldn't get the score for %d:%d", a, b)
-//			}
-//			if calc, err := scores.getIndex(a, b); calc != idx || err != nil {
-//				t.Fatalf("Got %d, expected %d", calc, idx)
-//			}
-//			idx++
-//		}
-//	}
-//}
-//
-//func TestScoresOrder(t *testing.T) {
-//	request := Request{
-//		STs: []CgmlstSt{"st1", "st2", "st3", "st4"},
-//	}
-//	cache := Cache{
-//		Sts: []CgmlstSt{},
-//	}
-//	index := Indexer{
-//		indices: make([]Index, len(request.STs)),
-//		lookup:  make(map[CgmlstSt]int),
-//	}
-//	for i, st := range request.STs {
-//		index.lookup[st] = i
-//		index.indices[i].Ready = true
-//	}
-//
-//	scores, err := NewScores(request, &cache, &index)
-//	if err != nil {
-//		t.Fatal(err)
-//	}
-//
-//	expected := []struct {
-//		a, b int
-//	}{
-//		{1, 0},
-//		{2, 0},
-//		{2, 1},
-//		{3, 0},
-//		{3, 1},
-//		{3, 2},
-//	}
-//
-//	if len(scores.scores) != len(expected) {
-//		t.Fatalf("Expected %d scores, got %d\n", len(expected), len(scores.scores))
-//	}
-//	for i, score := range scores.scores {
-//		if score.stA != expected[i].a || score.stB != expected[i].b {
-//			t.Fatalf("Failed at %d: %v, got %v\n", i, expected[i], score)
-//		}
-//	}
-//}
+
 //
 //func TestGetIndex(t *testing.T) {
 //	request := Request{
@@ -243,12 +290,12 @@ package main
 //		Sts: []CgmlstSt{},
 //	}
 //	index := Indexer{
-//		indices: make([]Index, len(request.STs)),
+//		profilesMap: make([]BitProfiles, len(request.STs)),
 //		lookup:  make(map[CgmlstSt]int),
 //	}
 //	for i, st := range request.STs {
 //		index.lookup[st] = i
-//		index.indices[i].Ready = true
+//		index.profilesMap[i].Ready = true
 //	}
 //
 //	scores, err := NewScores(request, &cache, &index)
@@ -289,12 +336,12 @@ package main
 //		Sts: []CgmlstSt{},
 //	}
 //	index := Indexer{
-//		indices: make([]Index, len(request.STs)),
+//		profilesMap: make([]BitProfiles, len(request.STs)),
 //		lookup:  make(map[CgmlstSt]int),
 //	}
 //	for i, st := range request.STs {
 //		index.lookup[st] = i
-//		index.indices[i].Ready = true
+//		index.profilesMap[i].Ready = true
 //	}
 //
 //	scores, err := NewScores(request, &cache, &index)
@@ -328,7 +375,7 @@ package main
 //}
 //
 //func TestComparer(t *testing.T) {
-//	profiles := [...]Profile{
+//	profilesMap := [...]Profile{
 //		Profile{
 //			ST: "abc123",
 //			Matches: map[string]interface{}{
@@ -357,8 +404,8 @@ package main
 //	}
 //
 //	indexer := NewIndexer([]string{"abc123", "bcd234", "cde345"})
-//	for i, p := range profiles {
-//		indexer.Index(&p)
+//	for i, p := range profilesMap {
+//		indexer.BitProfiles(&p)
 //		for j := 0; j < 10000; j++ {
 //			indexer.alleleTokens.Get(AlleleKey{
 //				fmt.Sprintf("fake-%d", i),
@@ -367,14 +414,14 @@ package main
 //		}
 //	}
 //
-//	if nBlocks := len(indexer.indices[indexer.lookup["bcd234"]].Alleles.blocks); nBlocks != 157 {
+//	if nBlocks := len(indexer.profilesMap[indexer.lookup["bcd234"]].Alleles.blocks); nBlocks != 157 {
 //		t.Fatalf("Expected 157 blocks, got %d\n", nBlocks)
 //	}
-//	if nBlocks := len(indexer.indices[indexer.lookup["cde345"]].Alleles.blocks); nBlocks != 313 {
+//	if nBlocks := len(indexer.profilesMap[indexer.lookup["cde345"]].Alleles.blocks); nBlocks != 313 {
 //		t.Fatalf("Expected 313 blocks, got %d\n", nBlocks)
 //	}
 //
-//	comparer := Comparer{indexer.indices, 3}
+//	comparer := Comparer{indexer.profilesMap, 3}
 //	if value := comparer.compare(0, 1); value != ALMOST_INF {
 //		t.Fatalf("Expected %d, got %d\n", ALMOST_INF, value)
 //	}
@@ -424,7 +471,7 @@ package main
 //
 //	indexer := NewIndexer(request.STs)
 //	for _, p := range testProfiles {
-//		indexer.Index(&p)
+//		indexer.BitProfiles(&p)
 //	}
 //
 //	scores, err := NewScores(request, &cache, indexer)
@@ -432,7 +479,7 @@ package main
 //		t.Fatal(err)
 //	}
 //
-//	scoreComplete, errChan := scores.Complete(indexer, ProgressSinkHole())
+//	scoreComplete, errChan := scores.RunScoring(indexer, ProgressSinkHole())
 //	select {
 //	case err := <-errChan:
 //		if err != nil {
@@ -472,7 +519,7 @@ package main
 //		t.Fatal(err)
 //	}
 //
-//	scoreComplete, errChan := scores.Complete(index, ProgressSinkHole())
+//	scoreComplete, errChan := scores.RunScoring(index, ProgressSinkHole())
 //	select {
 //	case err := <-errChan:
 //		if err != nil {
@@ -512,3 +559,72 @@ package main
 //		log.Println(threshold, countClusters(c))
 //	}
 //}
+
+func TestNewScores(t *testing.T) {
+
+	cache := Cache{
+		Sts:       []CgmlstSt{"1", "2", "5", "6"},
+		Lambda:    make([]int, 4),
+		Pi:        make([]int, 4),
+		Threshold: 5,
+		Edges: map[int][][2]int{
+			0: {},
+			1: {},
+			2: {},
+			3: {},
+			4: {{0, 1}},
+			5: {{0, 2}, {1, 2}},
+		},
+	}
+	genes := NewBitArray(6)
+	var i uint64
+	for i = 0; i < 6; i++ {
+		genes.SetBit(i)
+	}
+
+	profiles := ProfilesMap{
+		lookup: map[string]int{"1": 0, "2": 1, "3": 2, "4": 3, "5": 4, "6": 5},
+		indices: []BitProfiles{
+			{Genes: genes, Alleles: gocroaring.New(1, 2, 3, 4, 5, 6), Ready: true},
+			{Genes: genes, Alleles: gocroaring.New(7, 8, 9, 10, 5, 6), Ready: true},
+			{Genes: genes, Alleles: gocroaring.New(12, 13, 13, 15, 16, 6), Ready: true},
+			{Genes: genes, Alleles: gocroaring.New(1, 8, 9, 10, 11, 6), Ready: true},
+			{Genes: genes, Alleles: gocroaring.New(7, 8, 9, 10, 5, 6), Ready: true},
+			{Genes: genes, Alleles: gocroaring.New(100, 200, 300, 400, 500, 600), Ready: true},
+		},
+		schemeSize: 6,
+	}
+
+	request := Request{STs: []CgmlstSt{"1", "2", "3", "4", "5", "6"}, Threshold: 5}
+
+	type args struct {
+		request  Request
+		cache    *Cache
+		profiles *ProfilesMap
+	}
+
+	tests := []struct {
+		name    string
+		args    args
+		wantS   ScoresStore
+		wantErr bool
+	}{
+		{"TestCache",
+			args{request, &cache, &profiles},
+			ScoresStore{STs: []CgmlstSt{"1", "2", "5", "6", "3", "4"}, scores: []int{4, 5, 5, 2147483647, 2147483647, 2147483647, -1, -1, -1, -1, -1, -1, -1, -1, -1}, todo: 9, canReuseCache: true, cacheSize: 4},
+			false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotS, err := NewScores(tt.args.request, tt.args.cache, tt.args.profiles)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("NewScores() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(gotS, tt.wantS) {
+				t.Errorf("NewScores() gotS = %v, want %v", gotS, tt.wantS)
+			}
+		})
+	}
+}

@@ -26,8 +26,7 @@ func main() {
 		}
 		defer pprof.StopCPUProfile()
 	}
-	//var stdinScanner = bufio.NewScanner(os.Stdin)
-	//file, err := os.Open("testdata/small_test.json")
+	//file, err := os.Open("testdata/simple_test.json")
 	//if err != nil {
 	//	panic(err)
 	//}
@@ -69,7 +68,7 @@ func _main(r io.Reader, w io.Writer) ([]CgmlstSt, Clusters, []int) {
 		panic(err)
 	}
 
-	var scores scoresStore
+	var scores ScoresStore
 	if scores, err = NewScores(request, &cache, index); err != nil {
 		panic(err)
 	}
@@ -84,7 +83,7 @@ func _main(r io.Reader, w io.Writer) ([]CgmlstSt, Clusters, []int) {
 		}
 	}()
 
-	scoreComplete, errChan := scores.Complete(index, progressIn)
+	scoreComplete, errChan := scores.RunScoring(*index, progressIn)
 
 	select {
 	case err := <-errChan:
@@ -97,7 +96,7 @@ func _main(r io.Reader, w io.Writer) ([]CgmlstSt, Clusters, []int) {
 
 	progressIn <- ProgressEvent{CLUSTERING_STARTED, 0}
 
-	var distances []int
+	var distances *[]int
 	if distances, err = scores.Distances(); err != nil {
 		panic(err)
 	}
@@ -105,24 +104,24 @@ func _main(r io.Reader, w io.Writer) ([]CgmlstSt, Clusters, []int) {
 
 	var clusters Clusters
 	if scores.canReuseCache {
-		clusters, err = ClusterFromCache(distances, nItems, &cache)
+		clusters, err = ClusterFromCache(*distances, nItems, &cache)
 		if err != nil {
 			panic(err)
 		}
 	} else {
-		clusters, err = ClusterFromScratch(distances, nItems)
+		clusters, err = ClusterFromScratch(*distances, nItems)
 		if err != nil {
 			panic(err)
 		}
 	}
 
 	progressIn <- ProgressEvent{RESULTS_TO_SAVE, request.Threshold + 1}
-	for c := range clusters.Format(request.Threshold, distances, scores.STs) {
+	for c := range clusters.Format(request.Threshold, *distances, scores.STs) {
 		results <- c
 		progressIn <- ProgressEvent{SAVED_RESULT, 1}
 	}
 
 	close(results)
 	<-done
-	return scores.STs, clusters, distances
+	return scores.STs, clusters, *distances
 }

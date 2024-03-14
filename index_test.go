@@ -3,7 +3,7 @@ package main
 //func TestIndexer(t *testing.T) {
 //	STs := []string{"abc123", "bcd234"}
 //	indexer := NewIndexer(STs)
-//	indexer.Index(&Profile{
+//	indexer.BitProfiles(&Profile{
 //		ST: "abc123",
 //		Matches: map[string]interface{}{
 //			"gene1": 1,
@@ -11,12 +11,12 @@ package main
 //			"gene3": 1,
 //		},
 //	})
-//	index := indexer.indices[indexer.lookup["abc123"]]
+//	index := indexer.profilesMap[indexer.lookup["abc123"]]
 //	if value := index.Genes.blocks[0]; value != 7 {
 //		t.Fatalf("Got %d, expected 7\n", value)
 //	}
 //
-//	indexer.Index(&Profile{
+//	indexer.BitProfiles(&Profile{
 //		ST: "bcd234",
 //		Matches: map[string]interface{}{
 //			"gene1": 2,
@@ -35,7 +35,7 @@ package main
 //	}))
 //	expectedValue := 7 - valueOfGene3 + valueOfGene4
 //
-//	index = indexer.indices[indexer.lookup["bcd234"]]
+//	index = indexer.profilesMap[indexer.lookup["bcd234"]]
 //	if value := index.Genes.blocks[0]; value != uint64(expectedValue) {
 //		t.Fatalf("Got %d, expected %d\n", value, expectedValue)
 //	}
