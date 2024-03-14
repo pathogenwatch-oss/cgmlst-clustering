@@ -269,17 +269,23 @@ func (s *ScoresStore) UpdateFromCache(threshold int, c *Cache, cacheToScoresMap 
 	return
 }
 
-// Initialises
-func indexCache(STs *[]CgmlstSt, stIndexMap *map[CgmlstSt]int, cacheSize int) (int, []int) {
+// Sets up the ST links for those in the cache and sets the score index to the correct position
+func indexCache(STs *[]CgmlstSt, stIndexMap *map[CgmlstSt]int, cacheSize int) (int, *[]int) {
 	profileIndex := make([]int, len(*STs))
 	var i int
 	var st string
+	if cacheSize == 0 {
+		return 0, &profileIndex
+	}
 	for i, st = range (*STs)[:cacheSize] {
 		profileIndex[i] = (*stIndexMap)[st]
 	}
 	scoreIndex, err := GetIndex(i-1, i)
+	if err != nil {
+		panic(err)
+	}
 	scoreIndex++
-	return scoreIndex, profileIndex
+	return scoreIndex, &profileIndex
 }
 
 func (s *ScoresStore) RunScoring(profileMap ProfilesMap, progress chan ProgressEvent) (done chan bool, err chan error) {
@@ -301,15 +307,14 @@ func (s *ScoresStore) RunScoring(profileMap ProfilesMap, progress chan ProgressE
 
 	go func() {
 		scoreIndex, profileIndex := indexCache(&s.STs, &profileMap.lookup, s.cacheSize)
-		for i, st := range s.STs[s.cacheSize:] {
-			stAIndex := profileMap.lookup[st]
-			//fmt.Printf("i: %d cachesize: %d\n", i, s.cacheSize)
-			currentRow := i + s.cacheSize
-			profileIndex[currentRow] = stAIndex
-			//fmt.Println(profileIndex)
-			for j := 0; j < currentRow; j++ {
+		profileIndexD := *profileIndex
+		stCount := len(s.STs)
+		for i := s.cacheSize; i < stCount; i++ {
+			stAIndex := profileMap.lookup[s.STs[i]]
+			profileIndexD[i] = stAIndex
+			for j := 0; j < i; j++ {
 				if s.scores[scoreIndex] == -1 {
-					_scoreTasks <- [3]int{stAIndex, profileIndex[j], scoreIndex}
+					_scoreTasks <- [3]int{stAIndex, profileIndexD[j], scoreIndex}
 				}
 				scoreIndex++
 			}
