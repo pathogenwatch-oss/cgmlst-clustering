@@ -313,9 +313,7 @@ func (s *ScoresStore) RunScoring(profileMap ProfilesMap, progress chan ProgressE
 			stAIndex := profileMap.lookup[s.STs[i]]
 			profileIndexD[i] = stAIndex
 			for j := 0; j < i; j++ {
-				if s.scores[scoreIndex] == -1 {
-					_scoreTasks <- [3]int{stAIndex, profileIndexD[j], scoreIndex}
-				}
+				_scoreTasks <- [3]int{stAIndex, profileIndexD[j], scoreIndex}
 				scoreIndex++
 			}
 		}
