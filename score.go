@@ -3,9 +3,12 @@ package main
 import (
 	"fmt"
 	"log"
+	"runtime"
 	"sync"
 	"sync/atomic"
 )
+
+import _ "go.uber.org/automaxprocs"
 
 type Comparer struct {
 	profilesMap      ProfilesMap
@@ -45,11 +48,6 @@ func scoreProfiles(workerID int, jobs chan [3]int, scores *ScoresStore, comparer
 		}
 	}
 }
-
-//type scoreDetails struct {
-//	stA, stB      int
-//	value, status int
-//}
 
 type ScoresStore struct {
 	STs           []CgmlstSt
@@ -289,14 +287,14 @@ func indexCache(STs *[]CgmlstSt, stIndexMap *map[CgmlstSt]int, cacheSize int) (i
 }
 
 func (s *ScoresStore) RunScoring(profileMap ProfilesMap, progress chan ProgressEvent) (done chan bool, err chan error) {
-	numWorkers := 10
+	numWorkers := runtime.NumCPU() + 1
 	var scoreWg sync.WaitGroup
 
 	err = make(chan error)
 	done = make(chan bool)
 
-	_scoreTasks := make(chan [3]int, 50)
-	scoreTasks := make(chan [3]int)
+	_scoreTasks := make(chan [3]int, 5000)
+	scoreTasks := make(chan [3]int, 5000)
 	go func() {
 		for task := range _scoreTasks {
 			scoreTasks <- task
