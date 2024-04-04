@@ -10,7 +10,7 @@ COPY go.sum /tmp/clustering/
 
 COPY *.go /tmp/clustering/
 
-ENV CGO_ENABLED=1
+#ENV CGO_ENABLED=1
 
 RUN cd /tmp/clustering \
   && go build -o /cgps/clustering \

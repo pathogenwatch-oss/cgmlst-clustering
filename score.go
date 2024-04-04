@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -26,25 +25,30 @@ func (c *Comparer) compare(stA int, stB int) int {
 	return geneCount - alleleCount
 }
 
-func scoreProfiles(workerID int, jobs chan [3]int, scores *ScoresStore, comparer *Comparer, wg *sync.WaitGroup) {
-	nScores := 0
-	defer func() {
-		log.Printf("Worker %d has computed %d scores", workerID, nScores)
-	}()
+func scoreProfiles(jobs chan Batch, scores *ScoresStore, comparer *Comparer, wg *sync.WaitGroup) {
+	//nScores := 0
+	//defer func() {
+	//	log.Printf("Worker %d has computed %d scores", workerID, nScores)
+	//}()
 	defer wg.Done()
 	for {
-		j, more := <-jobs
+		job, more := <-jobs
 		if !more {
 			return
 		}
-		compare := comparer.compare(j[0], j[1])
-		err := scores.SetIdx(j[2], compare)
-		if err != nil {
-			panic(err)
-		}
-		nScores++
-		if nScores%1000000 == 0 {
-			log.Printf("Worker %d has computed %d scores", workerID, nScores)
+		profiles := *job.profileIndex
+		scoreIndex := job.scoreIndex
+		for i := 0; i < job.endIndex; i++ {
+			compare := comparer.compare(profiles[job.endIndex], profiles[i])
+			err := scores.SetIdx(scoreIndex, compare)
+			if err != nil {
+				panic(err)
+			}
+			scoreIndex++
+			//nScores++
+			//if nScores%1000000 == 0 {
+			//	log.Printf("Worker %d has computed %d scores", workerID, nScores)
+			//}
 		}
 	}
 }
@@ -156,7 +160,7 @@ func GetIndex(stA int, stB int) (int, error) {
 
 }
 
-func (s ScoresStore) getIndex(stA int, stB int) (int, error) {
+func (s *ScoresStore) getIndex(stA int, stB int) (int, error) {
 	minIdx, maxIdx := stA, stB
 	if stA == stB {
 		return 0, fmt.Errorf("STs shouldn't both be %d", stA)
@@ -182,23 +186,11 @@ func (s *ScoresStore) Set(stA int, stB int, score int) error {
 	return s.SetIdx(idx, score)
 }
 
-func (s ScoresStore) Distances() (*[]int, error) {
+func (s *ScoresStore) Distances() (*[]int, error) {
 	return &s.scores, nil
-
-	//distances := make([]int, len(s.scores))
-	//
-	//for i := 0; i < len(distances); i++ {
-	//	score := s.scores[i]
-	//	if score.status == PENDING {
-	//		return distances, errors.New("haven't found scores for all pairs of STs")
-	//	}
-	//	distances[i] = score.value
-	//}
-	//
-	//return distances, nil
 }
 
-func (s ScoresStore) Todo() int32 {
+func (s *ScoresStore) Todo() int32 {
 	return atomic.LoadInt32(&s.todo)
 }
 
@@ -274,6 +266,9 @@ func indexCache(STs *[]CgmlstSt, stIndexMap *map[CgmlstSt]int, cacheSize int) (i
 	var st string
 	if cacheSize == 0 {
 		return 0, &profileIndex
+	} else if cacheSize == 1 {
+		profileIndex[0] = (*stIndexMap)[(*STs)[0]]
+		return 0, &profileIndex
 	}
 	for i, st = range (*STs)[:cacheSize] {
 		profileIndex[i] = (*stIndexMap)[st]
@@ -286,6 +281,11 @@ func indexCache(STs *[]CgmlstSt, stIndexMap *map[CgmlstSt]int, cacheSize int) (i
 	return scoreIndex, &profileIndex
 }
 
+type Batch struct {
+	profileIndex         *[]int
+	endIndex, scoreIndex int
+}
+
 func (s *ScoresStore) RunScoring(profileMap ProfilesMap, progress chan ProgressEvent) (done chan bool, err chan error) {
 	numWorkers := runtime.NumCPU() + 1
 	var scoreWg sync.WaitGroup
@@ -293,12 +293,12 @@ func (s *ScoresStore) RunScoring(profileMap ProfilesMap, progress chan ProgressE
 	err = make(chan error)
 	done = make(chan bool)
 
-	_scoreTasks := make(chan [3]int, 5000)
-	scoreTasks := make(chan [3]int, 5000)
+	_scoreTasks := make(chan Batch, 5000)
+	scoreTasks := make(chan Batch, 5000)
 	go func() {
 		for task := range _scoreTasks {
 			scoreTasks <- task
-			progress <- ProgressEvent{SCORE_CALCULATED, 1}
+			progress <- ProgressEvent{SCORE_CALCULATED, task.endIndex - 1}
 		}
 		close(scoreTasks)
 	}()
@@ -307,13 +307,11 @@ func (s *ScoresStore) RunScoring(profileMap ProfilesMap, progress chan ProgressE
 		scoreIndex, profileIndex := indexCache(&s.STs, &profileMap.lookup, s.cacheSize)
 		profileIndexD := *profileIndex
 		stCount := len(s.STs)
-		for i := s.cacheSize; i < stCount; i++ {
-			stAIndex := profileMap.lookup[s.STs[i]]
-			profileIndexD[i] = stAIndex
-			for j := 0; j < i; j++ {
-				_scoreTasks <- [3]int{stAIndex, profileIndexD[j], scoreIndex}
-				scoreIndex++
-			}
+		for i := max(s.cacheSize, 1); i < stCount; i++ {
+			stAProfile := profileMap.lookup[s.STs[i]]
+			profileIndexD[i] = stAProfile // Adds profile to list of profiles, so it can be looked up directly after
+			_scoreTasks <- Batch{profileIndex: &profileIndexD, endIndex: i, scoreIndex: scoreIndex}
+			scoreIndex += i
 		}
 		close(_scoreTasks)
 	}()
@@ -321,7 +319,7 @@ func (s *ScoresStore) RunScoring(profileMap ProfilesMap, progress chan ProgressE
 	minMatchingGenes := int(profileMap.schemeSize * 8 / 10)
 	for i := 1; i <= numWorkers; i++ {
 		scoreWg.Add(1)
-		go scoreProfiles(i, scoreTasks, s, &Comparer{profileMap, minMatchingGenes}, &scoreWg)
+		go scoreProfiles(scoreTasks, s, &Comparer{profileMap, minMatchingGenes}, &scoreWg)
 	}
 
 	go func() {

@@ -36,6 +36,7 @@ func main() {
 }
 
 func _main(r io.Reader, w io.Writer) ([]CgmlstSt, Clusters, []int) {
+	log.SetFlags(log.Lmicroseconds)
 	enc := json.NewEncoder(w)
 	progressIn, progressOut := NewProgressWorker()
 	defer func() { progressIn <- ProgressEvent{EXIT, 0} }()
